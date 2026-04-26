@@ -43,6 +43,19 @@ body {
   border-bottom: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.app-navbar .app-navbar-menu {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+}
+
+.app-navbar .app-navbar-start,
+.app-navbar .app-navbar-end {
+  display: flex;
+  align-items: center;
+}
+
 .navbar-strong-link,
 .navbar-strong-link:visited,
 .navbar-strong-link:hover,
@@ -141,14 +154,14 @@ body {
   border-left: 4px solid #fb7185;
   overflow: hidden;
   display: flex;
-  align-items: center;
+  align-items: stretch;
 }
 
 .post-card-cover {
-  width: 5.5rem;
-  min-width: 5.5rem;
-  height: 5.5rem;
+  width: 5.65rem;
+  min-width: 5.65rem;
   flex-shrink: 0;
+  align-self: stretch;
   border-right: 1px solid rgba(24, 68, 49, 0.2);
   background: linear-gradient(160deg, #c2e3cf 0%, #9ed5b7 55%, #7dc4a0 100%);
   overflow: hidden;
@@ -203,11 +216,102 @@ body {
   white-space: nowrap;
 }
 
+.home-toolbar {
+  gap: 0.75rem;
+}
+
+.form-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.form-action-row .control {
+  margin-bottom: 0 !important;
+}
+
 @media (max-width: 640px) {
+  .app-navbar .app-navbar-menu {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    padding: 0 0.4rem 0.45rem;
+  }
+
+  .app-navbar .app-navbar-start,
+  .app-navbar .app-navbar-end {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-navbar .app-navbar-start {
+    flex-wrap: wrap;
+    gap: 0.15rem;
+  }
+
+  .app-navbar .app-navbar-search-item {
+    padding: 0.25rem 0;
+  }
+
+  .home-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .home-toolbar .page-heading {
+    margin-bottom: 0 !important;
+    text-align: left;
+  }
+
+  .home-sort-controls {
+    width: 100%;
+    display: flex;
+  }
+
+  .home-sort-controls .button {
+    flex: 1;
+  }
+
+  .post-card-tags {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .post-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .post-detail-header .title {
+    margin-bottom: 0 !important;
+  }
+
+  .post-detail-actions {
+    width: 100%;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .post-detail-actions .button {
+    flex: 1;
+  }
+
+  .post-detail-vote-row {
+    flex-wrap: wrap;
+  }
+
+  .form-action-row .control {
+    flex: 1;
+  }
+
+  .form-action-row .button {
+    width: 100%;
+  }
+
   .post-card-cover {
-    width: 4.75rem;
-    min-width: 4.75rem;
-    height: 4.75rem;
+    width: 4.9rem;
+    min-width: 4.9rem;
   }
 
   .post-card-body {

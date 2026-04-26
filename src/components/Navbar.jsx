@@ -1,13 +1,27 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { formatTagsInput, parseTagInput } from '../lib/tags'
 
-export default function Navbar({ searchCriteria, onApplySearch, onHomeReset }) {
+export default function Navbar({
+  searchCriteria,
+  onApplySearch,
+  onHomeReset,
+  hasUnsavedCreateDraft,
+  hasUnsavedEditDraft,
+  onDiscardCreateDraft,
+  onDiscardEditDraft,
+}) {
+  const location = useLocation()
   const navigate = useNavigate()
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false)
+  const [isLeaveDraftModalOpen, setIsLeaveDraftModalOpen] = useState(false)
   const [keywordInput, setKeywordInput] = useState('')
   const [tagsInput, setTagsInput] = useState('')
   const [searchError, setSearchError] = useState('')
+  const isOnCreatePage = location.pathname === '/create'
+  const isOnEditPage = location.pathname.startsWith('/edit/')
+  const shouldWarnBeforeGoingHome = (isOnCreatePage && hasUnsavedCreateDraft)
+    || (isOnEditPage && hasUnsavedEditDraft)
 
   const hasActiveSearch = Boolean((searchCriteria?.query || '').trim())
     || (Array.isArray(searchCriteria?.tags) && searchCriteria.tags.length > 0)
@@ -45,23 +59,46 @@ export default function Navbar({ searchCriteria, onApplySearch, onHomeReset }) {
     setSearchError('')
   }
 
-  function handleHomeClick() {
+  function handleTitleClick(e) {
+    // Keep hover/click styling on the title without navigating away.
+    e.preventDefault()
+  }
+
+  function handleHomeClick(e) {
+    if (shouldWarnBeforeGoingHome) {
+      e.preventDefault()
+      setIsLeaveDraftModalOpen(true)
+      return
+    }
+
     onHomeReset()
+  }
+
+  function closeLeaveDraftModal() {
+    setIsLeaveDraftModalOpen(false)
+  }
+
+  function handleLeaveDraftAndGoHome() {
+    onDiscardCreateDraft?.()
+    onDiscardEditDraft?.()
+    onHomeReset()
+    closeLeaveDraftModal()
+    navigate('/')
   }
 
   return (
     <>
       <nav className="navbar is-success app-navbar" role="navigation" aria-label="main navigation">
-        <div className="navbar-brand">
-          <Link to="/" className="navbar-item navbar-strong-link">
+        <div className="navbar-brand app-navbar-brand">
+          <Link to="/" className="navbar-item navbar-strong-link" onClick={handleTitleClick}>
             <span className="navbar-title-text">
               🎾 Grand Slam Hub
             </span>
           </Link>
         </div>
 
-        <div className="navbar-menu is-active">
-          <div className="navbar-start">
+        <div className="navbar-menu is-active app-navbar-menu">
+          <div className="navbar-start app-navbar-start">
             <Link to="/" className="navbar-item navbar-strong-link" onClick={handleHomeClick}>
               Home
             </Link>
@@ -70,8 +107,8 @@ export default function Navbar({ searchCriteria, onApplySearch, onHomeReset }) {
             </Link>
           </div>
 
-          <div className="navbar-end">
-            <div className="navbar-item flex items-center gap-2">
+          <div className="navbar-end app-navbar-end">
+            <div className="navbar-item app-navbar-search-item flex items-center gap-2">
               {hasActiveSearch && <span className="tag is-warning is-light is-rounded">Filtered</span>}
               <button
                 type="button"
@@ -173,6 +210,47 @@ export default function Navbar({ searchCriteria, onApplySearch, onHomeReset }) {
                 </p>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {isLeaveDraftModalOpen && (
+        <div
+          className="search-modal-overlay"
+          role="presentation"
+          onClick={closeLeaveDraftModal}
+        >
+          <div
+            className="search-modal-panel content-panel"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="leave-draft-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="leave-draft-title" className="title is-4 mb-2">Leave without saving?</h2>
+            <p className="text-sm text-gray-700 mb-4">
+              If you return to Home now, your unsaved changes will be cleared.
+            </p>
+            <div className="field is-grouped is-grouped-right mt-5">
+              <p className="control">
+                <button
+                  type="button"
+                  className="button is-light"
+                  onClick={closeLeaveDraftModal}
+                >
+                  Stay here
+                </button>
+              </p>
+              <p className="control">
+                <button
+                  type="button"
+                  className="button is-danger"
+                  onClick={handleLeaveDraftAndGoHome}
+                >
+                  Leave and clear
+                </button>
+              </p>
+            </div>
           </div>
         </div>
       )}

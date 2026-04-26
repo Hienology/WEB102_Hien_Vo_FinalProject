@@ -14,6 +14,8 @@ function createEmptySearchCriteria() {
 export default function App() {
   const [activeSearchCriteria, setActiveSearchCriteria] = useState(createEmptySearchCriteria)
   const [searchDraftCriteria, setSearchDraftCriteria] = useState(createEmptySearchCriteria)
+  const [hasUnsavedCreateDraft, setHasUnsavedCreateDraft] = useState(false)
+  const [hasUnsavedEditDraft, setHasUnsavedEditDraft] = useState(false)
 
   function handleApplySearch(nextCriteria) {
     setActiveSearchCriteria(nextCriteria)
@@ -34,6 +36,14 @@ export default function App() {
     setSearchDraftCriteria(createEmptySearchCriteria())
   }
 
+  function handleDiscardCreateDraft() {
+    setHasUnsavedCreateDraft(false)
+  }
+
+  function handleDiscardEditDraft() {
+    setHasUnsavedEditDraft(false)
+  }
+
   return (
     <BrowserRouter>
       <div className="app-shell">
@@ -41,6 +51,10 @@ export default function App() {
           searchCriteria={searchDraftCriteria}
           onApplySearch={handleApplySearch}
           onHomeReset={handleHomeReset}
+          hasUnsavedCreateDraft={hasUnsavedCreateDraft}
+          hasUnsavedEditDraft={hasUnsavedEditDraft}
+          onDiscardCreateDraft={handleDiscardCreateDraft}
+          onDiscardEditDraft={handleDiscardEditDraft}
         />
         <main>
           <Routes>
@@ -54,9 +68,15 @@ export default function App() {
                 />
               )}
             />
-            <Route path="/create" element={<CreatePostPage />} />
+            <Route
+              path="/create"
+              element={<CreatePostPage onDraftStateChange={setHasUnsavedCreateDraft} />}
+            />
             <Route path="/post/:id" element={<PostDetailPage />} />
-            <Route path="/edit/:id" element={<EditPostPage />} />
+            <Route
+              path="/edit/:id"
+              element={<EditPostPage onDraftStateChange={setHasUnsavedEditDraft} />}
+            />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>

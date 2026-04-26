@@ -67,9 +67,9 @@ export default function HomePage({
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 home-toolbar">
         <h1 className="title is-3 page-heading">Latest Discussions</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 home-sort-controls">
           <button
             className={`button is-small ${sortBy === 'newest' ? 'is-success' : 'is-light'}`}
             onClick={() => setSortBy('newest')}

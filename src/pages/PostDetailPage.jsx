@@ -135,10 +135,10 @@ export default function PostDetailPage() {
 
       {/* Post card */}
       <div className="box content-panel mb-6 border-l-4 border-emerald-500">
-        <div className="flex justify-between items-start gap-4 mb-4">
+        <div className="flex justify-between items-start gap-4 mb-4 post-detail-header">
           <h1 className="title is-3 text-gray-800 mb-0">{post.title}</h1>
           {isAuthor && (
-            <div className="flex gap-2 shrink-0">
+            <div className="flex gap-2 shrink-0 post-detail-actions">
               <Link
                 to={`/edit/${post.id}`}
                 className="button is-warning is-small"
@@ -195,7 +195,7 @@ export default function PostDetailPage() {
         )}
 
         {/* Upvote section */}
-        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-100 post-detail-vote-row">
           <button
             className={`button is-danger is-outlined ${upvoting ? 'is-loading' : ''}`}
             onClick={handleUpvote}
