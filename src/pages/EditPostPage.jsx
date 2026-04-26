@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
+import { formatTagsInput, MAX_TAGS, parseTagInput } from '../lib/tags'
 import Spinner from '../components/Spinner'
 
 export default function EditPostPage() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
+  const [tagsInput, setTagsInput] = useState('')
   const [content, setContent] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [loading, setLoading] = useState(true)
@@ -35,6 +37,7 @@ export default function EditPostPage() {
       }
 
       setTitle(data.title)
+      setTagsInput(formatTagsInput(data.tags))
       setContent(data.content || '')
       setImageUrl(data.image_url || '')
       setLoading(false)
@@ -55,6 +58,7 @@ export default function EditPostPage() {
       .from('posts')
       .update({
         title: title.trim(),
+        tags: parseTagInput(tagsInput),
         content: content.trim() || null,
         image_url: imageUrl.trim() || null,
       })
@@ -73,9 +77,9 @@ export default function EditPostPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-xl">
-      <h1 className="title is-3 text-gray-800 mb-6">Edit Post</h1>
+      <h1 className="title is-3 page-heading mb-6">Edit Post</h1>
 
-      <div className="box">
+      <div className="box content-panel">
         <form onSubmit={handleSubmit}>
           {error && (
             <div className="notification is-danger is-light mb-4">
@@ -110,6 +114,20 @@ export default function EditPostPage() {
                 onChange={(e) => setContent(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="field">
+            <label className="label">Tags</label>
+            <div className="control">
+              <input
+                className="input"
+                type="text"
+                placeholder="grand-slam, wimbledon, analysis"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+              />
+            </div>
+            <p className="help">Use commas to separate tags. Up to {MAX_TAGS} tags.</p>
           </div>
 
           <div className="field">

@@ -16,8 +16,9 @@ A lightweight, minimalist web forum dedicated to tennis enthusiasts. Built as a 
 
 - 📋 **Home Feed** — posts with title, creation time, and upvote count
 - 🔀 **Sort Toggle** — Newest or Most Popular
-- 🔍 **Live Search** — filter posts by title (case-insensitive)
-- ✍️ **Create Post** — title (required), content, and image URL (optional)
+- 🔍 **Modal Search** — open Search dialog, filter by words (title/content), tags, or both combined
+- 🏷️ **Tag System** — add tags to posts for better discovery
+- ✍️ **Create Post** — title (required), tags, content, and image URL (optional)
 - 📄 **Post Detail** — full post view with comments
 - ▲ **Upvoting** — unlimited upvotes per user
 - 💬 **Comments** — append comments to any post thread
@@ -36,7 +37,9 @@ A lightweight, minimalist web forum dedicated to tennis enthusiasts. Built as a 
 |--------|------|-----------|
 | `id` | UUID | Primary Key, Auto-generated |
 | `created_at` | TIMESTAMPTZ | Default `now()` |
+| `edited_at` | TIMESTAMPTZ | Nullable, auto-updated when post content is edited |
 | `title` | TEXT | Not Null |
+| `tags` | TEXT[] | Default empty array |
 | `content` | TEXT | Nullable |
 | `image_url` | TEXT | Nullable |
 | `upvotes` | INTEGER | Default `0` |
@@ -51,6 +54,15 @@ A lightweight, minimalist web forum dedicated to tennis enthusiasts. Built as a 
 | `post_id` | UUID | Foreign Key → `posts.id`, ON DELETE CASCADE |
 | `content` | TEXT | Not Null |
 | `author_id` | TEXT | Stores localStorage UUID |
+
+For a SQL-first setup (recommended), run the script in `supabase/sql/tags_setup.sql` inside Supabase SQL Editor.
+
+This script ensures:
+- `posts.tags` is `TEXT[]` with `NOT NULL` + default empty array
+- one post can store multiple self-defined tags
+- `posts.edited_at` stores the latest edit time (title/content/image/tags edits)
+- tag search is indexed with `GIN`
+- SQL function `search_posts(query, tags, sort)` is available for combined criteria searching
 
 ## Local Development
 

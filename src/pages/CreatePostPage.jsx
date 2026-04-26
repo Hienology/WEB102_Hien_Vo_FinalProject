@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
+import { MAX_TAGS, parseTagInput } from '../lib/tags'
 
 export default function CreatePostPage() {
   const navigate = useNavigate()
   const [title, setTitle] = useState('')
+  const [tagsInput, setTagsInput] = useState('')
   const [content, setContent] = useState('')
   const [imageUrl, setImageUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -26,6 +28,7 @@ export default function CreatePostPage() {
       .from('posts')
       .insert({
         title: title.trim(),
+        tags: parseTagInput(tagsInput),
         content: content.trim() || null,
         image_url: imageUrl.trim() || null,
         author_id: authorId,
@@ -45,9 +48,9 @@ export default function CreatePostPage() {
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-xl">
-      <h1 className="title is-3 text-gray-800 mb-6">Create a New Post</h1>
+      <h1 className="title is-3 page-heading mb-6">Create a New Post</h1>
 
-      <div className="box">
+      <div className="box content-panel">
         <form onSubmit={handleSubmit}>
           {error && (
             <div className="notification is-danger is-light mb-4">
@@ -82,6 +85,20 @@ export default function CreatePostPage() {
                 onChange={(e) => setContent(e.target.value)}
               />
             </div>
+          </div>
+
+          <div className="field">
+            <label className="label">Tags</label>
+            <div className="control">
+              <input
+                className="input"
+                type="text"
+                placeholder="grand-slam, wimbledon, analysis"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+              />
+            </div>
+            <p className="help">Use commas to separate tags. Up to {MAX_TAGS} tags.</p>
           </div>
 
           <div className="field">

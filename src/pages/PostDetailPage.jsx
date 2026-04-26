@@ -107,6 +107,7 @@ export default function PostDetailPage() {
   }
 
   const isAuthor = post.author_id === userId
+  const postTags = Array.isArray(post.tags) ? post.tags : []
   const createdAt = new Date(post.created_at).toLocaleString('en-US', {
     month: 'long',
     day: 'numeric',
@@ -114,6 +115,16 @@ export default function PostDetailPage() {
     hour: '2-digit',
     minute: '2-digit',
   })
+  const hasEditedAt = Boolean(post.edited_at)
+  const editedAt = hasEditedAt
+    ? new Date(post.edited_at).toLocaleString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+    : null
 
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
@@ -123,7 +134,7 @@ export default function PostDetailPage() {
       </Link>
 
       {/* Post card */}
-      <div className="box mb-6 border-l-4 border-emerald-500">
+      <div className="box content-panel mb-6 border-l-4 border-emerald-500">
         <div className="flex justify-between items-start gap-4 mb-4">
           <h1 className="title is-3 text-gray-800 mb-0">{post.title}</h1>
           {isAuthor && (
@@ -146,6 +157,19 @@ export default function PostDetailPage() {
 
         <p className="text-sm text-gray-400 mb-4">{createdAt}</p>
 
+        {postTags.length > 0 && (
+          <div className="tags mb-4">
+            {postTags.map((tag, index) => (
+              <span
+                key={`${post.id}-${tag}-${index}`}
+                className="tag is-success is-light is-rounded"
+              >
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
+
         {post.image_url && (
           <figure className="image mb-4 rounded overflow-hidden">
             <img
@@ -162,6 +186,12 @@ export default function PostDetailPage() {
           <div className="content text-gray-700 whitespace-pre-wrap mb-6">
             {post.content}
           </div>
+        )}
+
+        {hasEditedAt && (
+          <p className="text-sm text-gray-500 mb-3 italic">
+            Last edited: {editedAt}
+          </p>
         )}
 
         {/* Upvote section */}
@@ -181,7 +211,7 @@ export default function PostDetailPage() {
       </div>
 
       {/* Comments section */}
-      <div className="box">
+      <div className="box content-panel">
         <h2 className="title is-5 text-gray-800 mb-4">
           Comments ({comments.length})
         </h2>
@@ -193,7 +223,7 @@ export default function PostDetailPage() {
             {comments.map((comment) => (
               <div
                 key={comment.id}
-                className="box p-3 bg-stone-50"
+                className="box content-panel-subtle p-3"
               >
                 <p className="text-gray-700 whitespace-pre-wrap">{comment.content}</p>
                 <p className="text-xs text-gray-400 mt-1">
