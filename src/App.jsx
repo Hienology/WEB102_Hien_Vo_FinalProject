@@ -29,6 +29,7 @@ export default function App() {
 
   function handleHomeReset() {
     setActiveSearchCriteria(createEmptySearchCriteria())
+    setSearchDraftCriteria(createEmptySearchCriteria())
   }
 
   function handleClearAllFilters() {

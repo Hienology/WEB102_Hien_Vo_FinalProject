@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBeforeUnload, useNavigate, useParams } from 'react-router-dom'
+import MediaFilePicker from '../components/MediaFilePicker'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
 import { formatTagsInput, MAX_TAGS, parseTagInput } from '../lib/tags'
 import Spinner from '../components/Spinner'
+import {
+  getMediaTypeFromUrl,
+  deleteMediaFile,
+  isSupabaseMediaUrl,
+  uploadMediaFile,
+  validateMediaFile,
+} from '../lib/media'
 
 export default function EditPostPage({ onDraftStateChange }) {
   const { id } = useParams()
@@ -12,6 +20,11 @@ export default function EditPostPage({ onDraftStateChange }) {
   const [tagsInput, setTagsInput] = useState('')
   const [content, setContent] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [imageCaption, setImageCaption] = useState('')
+  const [selectedMediaFileName, setSelectedMediaFileName] = useState('')
+  const [mediaType, setMediaType] = useState(null)
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('')
+  const [isPreparingMedia, setIsPreparingMedia] = useState(false)
   const [initialValues, setInitialValues] = useState(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -23,8 +36,16 @@ export default function EditPostPage({ onDraftStateChange }) {
     || tagsInput !== initialValues.tagsInput
     || content !== initialValues.content
     || imageUrl !== initialValues.imageUrl
+    || imageCaption !== initialValues.imageCaption
   )
-  const shouldBlockNavigation = hasDraftChanges && !submitting
+  const shouldBlockNavigation = (hasDraftChanges || isPreparingMedia) && !submitting
+  const selectedMediaType = mediaType || getMediaTypeFromUrl(imageUrl)
+
+  useEffect(() => () => {
+    if (mediaPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(mediaPreviewUrl)
+    }
+  }, [mediaPreviewUrl])
 
   useBeforeUnload((event) => {
     if (!shouldBlockNavigation) return
@@ -75,15 +96,20 @@ export default function EditPostPage({ onDraftStateChange }) {
       const nextTagsInput = formatTagsInput(data.tags)
       const nextContent = data.content || ''
       const nextImageUrl = data.image_url || ''
+      const nextImageCaption = data.image_caption || ''
 
       setTagsInput(nextTagsInput)
       setContent(nextContent)
       setImageUrl(nextImageUrl)
+      setImageCaption(nextImageCaption)
+      setMediaType(getMediaTypeFromUrl(nextImageUrl))
+      setMediaPreviewUrl(nextImageUrl)
       setInitialValues({
         title: data.title,
         tagsInput: nextTagsInput,
         content: nextContent,
         imageUrl: nextImageUrl,
+        imageCaption: nextImageCaption,
       })
       setLoading(false)
     }
@@ -96,8 +122,8 @@ export default function EditPostPage({ onDraftStateChange }) {
       return
     }
 
-    onDraftStateChange?.(hasDraftChanges)
-  }, [hasDraftChanges, initialValues, onDraftStateChange])
+    onDraftStateChange?.(hasDraftChanges || isPreparingMedia)
+  }, [hasDraftChanges, initialValues, isPreparingMedia, onDraftStateChange])
 
   useEffect(() => () => {
     onDraftStateChange?.(false)
@@ -105,6 +131,8 @@ export default function EditPostPage({ onDraftStateChange }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (isPreparingMedia) return
+
     if (!title.trim()) {
       setError('Post title is required.')
       return
@@ -119,6 +147,7 @@ export default function EditPostPage({ onDraftStateChange }) {
         tags: parseTagInput(tagsInput),
         content: content.trim() || null,
         image_url: imageUrl.trim() || null,
+        image_caption: imageCaption.trim() || null,
       })
       .eq('id', id)
 
@@ -127,8 +156,90 @@ export default function EditPostPage({ onDraftStateChange }) {
     if (updateError) {
       setError(updateError.message)
     } else {
+      if (initialValues?.imageUrl && initialValues.imageUrl !== imageUrl && isSupabaseMediaUrl(initialValues.imageUrl)) {
+        deleteMediaFile(initialValues.imageUrl).catch((cleanupError) => {
+          console.warn('Unable to clean up replaced post media:', cleanupError)
+        })
+      }
+
       onDraftStateChange?.(false)
       navigate(`/post/${id}`)
+    }
+  }
+
+  async function cleanupEditedMediaIfNeeded() {
+    const currentMediaUrl = imageUrl.trim()
+    if (currentMediaUrl && currentMediaUrl !== initialValues?.imageUrl && isSupabaseMediaUrl(currentMediaUrl)) {
+      try {
+        await deleteMediaFile(currentMediaUrl)
+      } catch (cleanupError) {
+        console.warn('Unable to clean up discarded post media:', cleanupError)
+      }
+    }
+  }
+
+  function handleMediaUrlChange(e) {
+    const nextValue = e.target.value
+    setImageUrl(nextValue)
+    setMediaType(getMediaTypeFromUrl(nextValue))
+    setMediaPreviewUrl(nextValue)
+    setSelectedMediaFileName('')
+    setError(null)
+  }
+
+  async function handleMediaUploadChange(e) {
+    const nextFile = e.target.files?.[0]
+    if (!nextFile) return
+
+    const { mediaType: nextMediaType, error: validationError } = validateMediaFile(nextFile)
+    if (validationError) {
+      setError(validationError)
+      e.target.value = ''
+      return
+    }
+
+    setError(null)
+    setIsPreparingMedia(true)
+    setSelectedMediaFileName(nextFile.name)
+    const nextPreviewUrl = URL.createObjectURL(nextFile)
+    setMediaPreviewUrl(nextPreviewUrl)
+    setMediaType(nextMediaType)
+
+    try {
+      const authorId = getUserId()
+      const { publicUrl } = await uploadMediaFile(nextFile, {
+        folder: 'posts',
+        ownerId: authorId,
+      })
+
+      setImageUrl(publicUrl)
+      setMediaPreviewUrl(publicUrl)
+    } catch (uploadError) {
+      setError(uploadError.message || 'Unable to process the selected file.')
+      setImageUrl('')
+      setMediaPreviewUrl('')
+      setMediaType(null)
+      setSelectedMediaFileName('')
+    } finally {
+      setIsPreparingMedia(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleClearMedia() {
+    const currentMediaUrl = imageUrl.trim()
+    setImageUrl('')
+    setImageCaption('')
+    setSelectedMediaFileName('')
+    setMediaType(null)
+    setMediaPreviewUrl('')
+
+    if (currentMediaUrl && currentMediaUrl !== initialValues?.imageUrl && isSupabaseMediaUrl(currentMediaUrl)) {
+      try {
+        await deleteMediaFile(currentMediaUrl)
+      } catch (cleanupError) {
+        console.warn('Unable to clean up cleared post media:', cleanupError)
+      }
     }
   }
 
@@ -136,11 +247,18 @@ export default function EditPostPage({ onDraftStateChange }) {
     setIsLeaveDraftModalOpen(false)
   }
 
-  function handleLeaveDraft() {
+  async function handleLeaveDraft() {
+    await cleanupEditedMediaIfNeeded()
+
     isAllowingBackNavigationRef.current = true
     setIsLeaveDraftModalOpen(false)
     onDraftStateChange?.(false)
     window.history.back()
+  }
+
+  async function handleCancel() {
+    await cleanupEditedMediaIfNeeded()
+    navigate(`/post/${id}`)
   }
 
   if (loading) return <Spinner />
@@ -188,6 +306,20 @@ export default function EditPostPage({ onDraftStateChange }) {
             </div>
 
             <div className="field">
+              <label className="label">Cover Caption</label>
+              <div className="control">
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Optional caption for the cover media"
+                  value={imageCaption}
+                  onChange={(e) => setImageCaption(e.target.value)}
+                  maxLength={200}
+                />
+              </div>
+            </div>
+
+            <div className="field">
               <label className="label">Tags</label>
               <div className="control">
                 <input
@@ -202,16 +334,72 @@ export default function EditPostPage({ onDraftStateChange }) {
             </div>
 
             <div className="field">
-              <label className="label">Image URL</label>
+              <label className="label">Media URL (Image or Video)</label>
               <div className="control">
                 <input
                   className="input"
                   type="url"
-                  placeholder="https://example.com/image.jpg"
+                  placeholder="https://example.com/photo.jpg or clip.mp4"
                   value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
+                  onChange={handleMediaUrlChange}
                 />
               </div>
+              <p className="help">Paste a direct image/video URL, or upload from your device below.</p>
+            </div>
+
+            <div className="field">
+              <label className="label">Upload Media From Device</label>
+              <div className="control">
+                <MediaFilePicker
+                  accept="image/*,video/*"
+                  disabled={submitting || isPreparingMedia}
+                  fileName={selectedMediaFileName}
+                  label="Choose Files"
+                  onFileSelect={(selectedFile, event) => {
+                    if (!selectedFile) return
+                    handleMediaUploadChange(event)
+                  }}
+                />
+              </div>
+              <p className="help">Images up to 10MB, videos up to 25MB.</p>
+
+              {isPreparingMedia && (
+                <div className="inline-loading-row" role="status" aria-live="polite">
+                  <span className="spinner spinner-inline spinner-sm" aria-hidden="true"></span>
+                  <span>Preparing media preview...</span>
+                </div>
+              )}
+
+              {mediaPreviewUrl.trim() && (
+                <div className="media-preview-shell mt-3">
+                  {selectedMediaType === 'video' ? (
+                    <video
+                      src={mediaPreviewUrl}
+                      controls
+                      preload="metadata"
+                      className="media-preview-frame"
+                    />
+                  ) : (
+                    <img
+                      src={mediaPreviewUrl}
+                      alt="Uploaded post media preview"
+                      className="media-preview-frame"
+                    />
+                  )}
+
+                  {imageCaption.trim() && (
+                    <p className="mt-2 text-sm text-gray-600 italic">{imageCaption.trim()}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    className="button is-small is-light mt-2"
+                    onClick={handleClearMedia}
+                  >
+                    Remove media
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="field is-grouped mt-6 form-action-row">
@@ -219,7 +407,7 @@ export default function EditPostPage({ onDraftStateChange }) {
                 <button
                   type="submit"
                   className={`button is-success ${submitting ? 'is-loading' : ''}`}
-                  disabled={submitting}
+                  disabled={submitting || isPreparingMedia}
                 >
                   Save Changes
                 </button>
@@ -228,7 +416,7 @@ export default function EditPostPage({ onDraftStateChange }) {
                 <button
                   type="button"
                   className="button is-light"
-                  onClick={() => navigate(`/post/${id}`)}
+                  onClick={handleCancel}
                 >
                   Cancel
                 </button>

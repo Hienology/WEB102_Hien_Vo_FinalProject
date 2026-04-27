@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useBeforeUnload, useNavigate } from 'react-router-dom'
+import MediaFilePicker from '../components/MediaFilePicker'
 import { supabase } from '../lib/supabaseClient'
 import { getUserId } from '../lib/auth'
 import { MAX_TAGS, parseTagInput } from '../lib/tags'
+import {
+  getMediaTypeFromUrl,
+  deleteMediaFile,
+  isSupabaseMediaUrl,
+  uploadMediaFile,
+  validateMediaFile,
+} from '../lib/media'
 
 export default function CreatePostPage({ onDraftStateChange }) {
   const navigate = useNavigate()
@@ -10,14 +18,26 @@ export default function CreatePostPage({ onDraftStateChange }) {
   const [tagsInput, setTagsInput] = useState('')
   const [content, setContent] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [imageCaption, setImageCaption] = useState('')
+  const [selectedMediaFileName, setSelectedMediaFileName] = useState('')
+  const [mediaType, setMediaType] = useState(null)
+  const [mediaPreviewUrl, setMediaPreviewUrl] = useState('')
+  const [isPreparingMedia, setIsPreparingMedia] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [isLeaveDraftModalOpen, setIsLeaveDraftModalOpen] = useState(false)
   const [error, setError] = useState(null)
   const isAllowingBackNavigationRef = useRef(false)
   const hasDraftContent = Boolean(
-    title.trim() || tagsInput.trim() || content.trim() || imageUrl.trim(),
+    title.trim() || tagsInput.trim() || content.trim() || imageUrl.trim() || imageCaption.trim() || isPreparingMedia,
   )
   const shouldBlockNavigation = hasDraftContent && !submitting
+  const selectedMediaType = mediaType || getMediaTypeFromUrl(imageUrl)
+
+  useEffect(() => () => {
+    if (mediaPreviewUrl.startsWith('blob:')) {
+      URL.revokeObjectURL(mediaPreviewUrl)
+    }
+  }, [mediaPreviewUrl])
 
   useBeforeUnload((event) => {
     if (!shouldBlockNavigation) return
@@ -54,6 +74,8 @@ export default function CreatePostPage({ onDraftStateChange }) {
 
   async function handleSubmit(e) {
     e.preventDefault()
+    if (isPreparingMedia) return
+
     if (!title.trim()) {
       setError('Post title is required.')
       return
@@ -70,6 +92,7 @@ export default function CreatePostPage({ onDraftStateChange }) {
         tags: parseTagInput(tagsInput),
         content: content.trim() || null,
         image_url: imageUrl.trim() || null,
+        image_caption: imageCaption.trim() || null,
         author_id: authorId,
         upvotes: 0,
       })
@@ -86,15 +109,86 @@ export default function CreatePostPage({ onDraftStateChange }) {
     }
   }
 
+  function handleMediaUrlChange(e) {
+    const nextValue = e.target.value
+    setImageUrl(nextValue)
+    setMediaType(getMediaTypeFromUrl(nextValue))
+    setMediaPreviewUrl(nextValue)
+    setSelectedMediaFileName('')
+    setError(null)
+  }
+
+  async function handleMediaUploadChange(e) {
+    const nextFile = e.target.files?.[0]
+    if (!nextFile) return
+
+    const { mediaType: nextMediaType, error: validationError } = validateMediaFile(nextFile)
+    if (validationError) {
+      setError(validationError)
+      e.target.value = ''
+      return
+    }
+
+    setError(null)
+    setIsPreparingMedia(true)
+    setSelectedMediaFileName(nextFile.name)
+    const nextPreviewUrl = URL.createObjectURL(nextFile)
+    setMediaPreviewUrl(nextPreviewUrl)
+    setMediaType(nextMediaType)
+
+    try {
+      const authorId = getUserId()
+      const { publicUrl } = await uploadMediaFile(nextFile, {
+        folder: 'posts',
+        ownerId: authorId,
+      })
+
+      setImageUrl(publicUrl)
+      setMediaPreviewUrl(publicUrl)
+    } catch (uploadError) {
+      setError(uploadError.message || 'Unable to process the selected file.')
+      setImageUrl('')
+      setMediaPreviewUrl('')
+      setMediaType(null)
+      setSelectedMediaFileName('')
+    } finally {
+      setIsPreparingMedia(false)
+      e.target.value = ''
+    }
+  }
+
+  async function handleClearMedia() {
+    const currentMediaUrl = imageUrl.trim()
+    setImageUrl('')
+    setImageCaption('')
+    setSelectedMediaFileName('')
+    setMediaType(null)
+    setMediaPreviewUrl('')
+
+    if (currentMediaUrl && isSupabaseMediaUrl(currentMediaUrl)) {
+      try {
+        await deleteMediaFile(currentMediaUrl)
+      } catch (cleanupError) {
+        console.warn('Unable to clean up cleared post media:', cleanupError)
+      }
+    }
+  }
+
   function handleStayOnDraft() {
     setIsLeaveDraftModalOpen(false)
   }
 
-  function handleLeaveDraft() {
+  async function handleLeaveDraft() {
+    await handleClearMedia()
     isAllowingBackNavigationRef.current = true
     setIsLeaveDraftModalOpen(false)
     onDraftStateChange?.(false)
     window.history.back()
+  }
+
+  async function handleCancel() {
+    await handleClearMedia()
+    navigate('/')
   }
 
   return (
@@ -140,6 +234,20 @@ export default function CreatePostPage({ onDraftStateChange }) {
             </div>
 
             <div className="field">
+              <label className="label">Cover Caption</label>
+              <div className="control">
+                <input
+                  className="input"
+                  type="text"
+                  placeholder="Optional caption for the cover media"
+                  value={imageCaption}
+                  onChange={(e) => setImageCaption(e.target.value)}
+                  maxLength={200}
+                />
+              </div>
+            </div>
+
+            <div className="field">
               <label className="label">Tags</label>
               <div className="control">
                 <input
@@ -154,16 +262,72 @@ export default function CreatePostPage({ onDraftStateChange }) {
             </div>
 
             <div className="field">
-              <label className="label">Image URL</label>
+              <label className="label">Media URL (Image or Video)</label>
               <div className="control">
                 <input
                   className="input"
                   type="url"
-                  placeholder="https://example.com/image.jpg"
+                  placeholder="https://example.com/photo.jpg or clip.mp4"
                   value={imageUrl}
-                  onChange={(e) => setImageUrl(e.target.value)}
+                  onChange={handleMediaUrlChange}
                 />
               </div>
+              <p className="help">Paste a direct image/video URL, or upload from your device below.</p>
+            </div>
+
+            <div className="field">
+              <label className="label">Upload Media From Device</label>
+              <div className="control">
+                <MediaFilePicker
+                  accept="image/*,video/*"
+                  disabled={submitting || isPreparingMedia}
+                  fileName={selectedMediaFileName}
+                  label="Choose Files"
+                  onFileSelect={(selectedFile, event) => {
+                    if (!selectedFile) return
+                    handleMediaUploadChange(event)
+                  }}
+                />
+              </div>
+              <p className="help">Images up to 10MB, videos up to 25MB.</p>
+
+              {isPreparingMedia && (
+                <div className="inline-loading-row" role="status" aria-live="polite">
+                  <span className="spinner spinner-inline spinner-sm" aria-hidden="true"></span>
+                  <span>Preparing media preview...</span>
+                </div>
+              )}
+
+              {mediaPreviewUrl.trim() && (
+                <div className="media-preview-shell mt-3">
+                  {selectedMediaType === 'video' ? (
+                    <video
+                      src={mediaPreviewUrl}
+                      controls
+                      preload="metadata"
+                      className="media-preview-frame"
+                    />
+                  ) : (
+                    <img
+                      src={mediaPreviewUrl}
+                      alt="Uploaded post media preview"
+                      className="media-preview-frame"
+                    />
+                  )}
+
+                  {imageCaption.trim() && (
+                    <p className="mt-2 text-sm text-gray-600 italic">{imageCaption.trim()}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    className="button is-small is-light mt-2"
+                    onClick={handleClearMedia}
+                  >
+                    Remove media
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="field is-grouped mt-6 form-action-row">
@@ -171,7 +335,7 @@ export default function CreatePostPage({ onDraftStateChange }) {
                 <button
                   type="submit"
                   className={`button is-success ${submitting ? 'is-loading' : ''}`}
-                  disabled={submitting}
+                  disabled={submitting || isPreparingMedia}
                 >
                   Publish Post
                 </button>
@@ -180,7 +344,7 @@ export default function CreatePostPage({ onDraftStateChange }) {
                 <button
                   type="button"
                   className="button is-light"
-                  onClick={() => navigate('/')}
+                  onClick={handleCancel}
                 >
                   Cancel
                 </button>

@@ -8,6 +8,53 @@ import {
 import PostCard from '../components/PostCard'
 import Spinner from '../components/Spinner'
 
+function resolveNumericCommentCount(post) {
+  const value = Number(post?.commentsCount ?? post?.comment_count ?? post?.comments_count)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+async function enrichPostsWithCommentCounts(rawPosts) {
+  const posts = Array.isArray(rawPosts) ? rawPosts : []
+  if (posts.length === 0) return []
+
+  const postIds = posts
+    .map((post) => post?.id)
+    .filter(Boolean)
+
+  if (postIds.length === 0) {
+    return posts.map((post) => ({
+      ...post,
+      commentsCount: resolveNumericCommentCount(post) ?? 0,
+    }))
+  }
+
+  const { data: commentsData, error: commentsError } = await supabase
+    .from('comments')
+    .select('post_id')
+    .in('post_id', postIds)
+
+  if (commentsError) {
+    console.warn('Unable to load comment counts for Home feed:', commentsError)
+    return posts.map((post) => ({
+      ...post,
+      commentsCount: resolveNumericCommentCount(post) ?? 0,
+    }))
+  }
+
+  const commentCountByPostId = {}
+  for (const comment of commentsData || []) {
+    const postId = comment?.post_id
+    if (!postId) continue
+
+    commentCountByPostId[postId] = (commentCountByPostId[postId] || 0) + 1
+  }
+
+  return posts.map((post) => ({
+    ...post,
+    commentsCount: resolveNumericCommentCount(post) ?? commentCountByPostId[post.id] ?? 0,
+  }))
+}
+
 export default function HomePage({
   searchCriteria,
   onRefineSearchCriteria,
@@ -42,7 +89,8 @@ export default function HomePage({
       })
 
       if (!sqlError) {
-        setPosts(sqlData || [])
+        const postsWithComments = await enrichPostsWithCommentCounts(sqlData || [])
+        setPosts(postsWithComments)
         setLoading(false)
         return
       }
@@ -51,14 +99,16 @@ export default function HomePage({
 
       const { data: fallbackData, error: fallbackError } = await supabase
         .from('posts')
-        .select('id, created_at, title, content, tags, image_url, upvotes')
+        .select('id, created_at, title, content, tags, image_url, image_caption, upvotes')
         .order(sortBy === 'newest' ? 'created_at' : 'upvotes', { ascending: false })
 
       if (fallbackError) {
         console.error('Error fetching posts:', fallbackError)
         setPosts([])
       } else {
-        setPosts((fallbackData || []).filter((post) => postMatchesSearchCriteria(post, criteria)))
+        const filteredPosts = (fallbackData || []).filter((post) => postMatchesSearchCriteria(post, criteria))
+        const postsWithComments = await enrichPostsWithCommentCounts(filteredPosts)
+        setPosts(postsWithComments)
       }
       setLoading(false)
     }
@@ -68,7 +118,7 @@ export default function HomePage({
   return (
     <div className="container mx-auto px-4 py-8 max-w-2xl">
       <div className="flex justify-between items-center mb-6 home-toolbar">
-        <h1 className="title is-3 page-heading">Latest Discussions</h1>
+        <h1 className="title is-3 page-heading">All Discussions</h1>
         <div className="flex gap-2 home-sort-controls">
           <button
             className={`button is-small ${sortBy === 'newest' ? 'is-success' : 'is-light'}`}
