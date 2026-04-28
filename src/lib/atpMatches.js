@@ -1,7 +1,7 @@
 export const ESPN_ATP_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard'
 export const SPORTRADAR_ATP_PROXY_URL = '/api/sportsradar/tennis/atp-live'
 export const API_TENNIS_PROXY_URL = '/api/api-tennis/atp-live'
-export const DEFAULT_ATP_MATCH_LIMIT = 50
+export const DEFAULT_ATP_MATCH_LIMIT = 48
 export const DEFAULT_ATP_PROVIDER = 'auto'
 const RECENT_MATCH_DETAIL_WINDOW = 12
 
@@ -327,19 +327,8 @@ function keepLatestThenCompleted(matches, limit) {
     return right.sortEpoch - left.sortEpoch
   })
 
-  function stripInternalFields(match) {
-    const sanitizedMatch = { ...match }
-    delete sanitizedMatch.sortEpoch
-    delete sanitizedMatch.isCompleted
-    delete sanitizedMatch.atpHint
-    delete sanitizedMatch.competitionGender
-    delete sanitizedMatch.tourCode
-    return sanitizedMatch
-  }
-
   return orderedMatches
     .slice(0, clampLimit(limit))
-    .map((match) => stripInternalFields(match))
 }
 
 function mapEspnCompetitionToTickerItem(competition, tournamentName) {
