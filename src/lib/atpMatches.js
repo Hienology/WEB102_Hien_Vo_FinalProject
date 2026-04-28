@@ -107,6 +107,151 @@ function getCompetitorScore(competitor) {
   return String(rawScore)
 }
 
+function normalizeScoreTextValue(score) {
+  const normalizedScore = String(score ?? '').trim()
+  return normalizedScore === '' || normalizedScore === '-' ? '' : normalizedScore
+}
+
+function chooseTiebreakDisplayValue({ leftTiebreak, rightTiebreak, winnerSide } = {}) {
+  const normalizedLeftTiebreak = normalizeScoreTextValue(leftTiebreak)
+  const normalizedRightTiebreak = normalizeScoreTextValue(rightTiebreak)
+
+  if (winnerSide === 'left') {
+    return normalizedRightTiebreak || normalizedLeftTiebreak
+  }
+
+  if (winnerSide === 'right') {
+    return normalizedLeftTiebreak || normalizedRightTiebreak
+  }
+
+  return normalizedLeftTiebreak || normalizedRightTiebreak
+}
+
+function formatSetScoreDisplay({
+  leftScore,
+  rightScore,
+  leftTiebreak,
+  rightTiebreak,
+  winnerSide,
+} = {}) {
+  const normalizedLeftScore = normalizeScoreTextValue(leftScore)
+  const normalizedRightScore = normalizeScoreTextValue(rightScore)
+
+  if (!normalizedLeftScore || !normalizedRightScore) return ''
+
+  const displayValue = `${normalizedLeftScore}-${normalizedRightScore}`
+  const tiebreakValue = chooseTiebreakDisplayValue({ leftTiebreak, rightTiebreak, winnerSide })
+
+  return tiebreakValue ? `${displayValue}(${tiebreakValue})` : displayValue
+}
+
+function extractSetScoresFromText(rawText) {
+  const normalizedText = String(rawText || '')
+    .replace(/[–—]/g, '-')
+    .trim()
+
+  if (!normalizedText) return []
+
+  return [...normalizedText.matchAll(/(\d+)\s*[-:]\s*(\d+)(?:\s*\((\d+)\))?/g)]
+    .map((match, index) => {
+      const leftScore = match[1]
+      const rightScore = match[2]
+      const tiebreakValue = match[3] || ''
+      const winnerSide = getWinnerSideByScore(leftScore, rightScore)
+
+      return {
+        index,
+        leftScore,
+        rightScore,
+        winnerSide,
+        display: formatSetScoreDisplay({
+          leftScore,
+          rightScore,
+          leftTiebreak: tiebreakValue,
+          rightTiebreak: tiebreakValue,
+          winnerSide,
+        }),
+      }
+    })
+    .filter((entry) => hasScoreValue(entry.leftScore) && hasScoreValue(entry.rightScore))
+}
+
+function countSetWins(setScores) {
+  return (Array.isArray(setScores) ? setScores : []).reduce((counts, setScore) => {
+    const winnerSide = setScore?.winnerSide || getWinnerSideByScore(setScore?.leftScore, setScore?.rightScore)
+
+    if (winnerSide === 'left') {
+      counts.left += 1
+    } else if (winnerSide === 'right') {
+      counts.right += 1
+    }
+
+    return counts
+  }, {
+    left: 0,
+    right: 0,
+  })
+}
+
+function deriveAggregateScoreFromSetScores(setScores) {
+  const counts = countSetWins(setScores)
+
+  if (counts.left === 0 && counts.right === 0) {
+    return null
+  }
+
+  return {
+    leftScore: String(counts.left),
+    rightScore: String(counts.right),
+    winnerSide: getWinnerSideByScore(counts.left, counts.right),
+  }
+}
+
+function buildSetScoreText(setScores) {
+  return (Array.isArray(setScores) ? setScores : [])
+    .map((setScore) => normalizeScoreTextValue(setScore?.display) || formatSetScoreDisplay(setScore))
+    .filter(Boolean)
+    .join(', ')
+}
+
+function extractEspnSetScores(leftCompetitor, rightCompetitor) {
+  const leftLinescores = Array.isArray(leftCompetitor?.linescores) ? leftCompetitor.linescores : []
+  const rightLinescores = Array.isArray(rightCompetitor?.linescores) ? rightCompetitor.linescores : []
+  const setCount = Math.max(leftLinescores.length, rightLinescores.length)
+
+  return Array.from({ length: setCount }, (_, index) => {
+    const leftSet = leftLinescores[index] || {}
+    const rightSet = rightLinescores[index] || {}
+    const leftScore = normalizeScoreTextValue(leftSet?.value ?? leftSet?.score ?? leftSet?.displayValue)
+    const rightScore = normalizeScoreTextValue(rightSet?.value ?? rightSet?.score ?? rightSet?.displayValue)
+
+    if (!leftScore && !rightScore) return null
+
+    const winnerSide = leftSet?.winner === true
+      ? 'left'
+      : rightSet?.winner === true
+        ? 'right'
+        : getWinnerSideByScore(leftScore, rightScore)
+
+    const leftTiebreak = normalizeScoreTextValue(leftSet?.tiebreak ?? leftSet?.tiebreakScore ?? leftSet?.tiebreak_value)
+    const rightTiebreak = normalizeScoreTextValue(rightSet?.tiebreak ?? rightSet?.tiebreakScore ?? rightSet?.tiebreak_value)
+
+    return {
+      index,
+      leftScore,
+      rightScore,
+      winnerSide,
+      display: formatSetScoreDisplay({
+        leftScore,
+        rightScore,
+        leftTiebreak,
+        rightTiebreak,
+        winnerSide,
+      }),
+    }
+  }).filter(Boolean)
+}
+
 function toEpoch(dateValue) {
   const parsed = Date.parse(dateValue || '')
   return Number.isNaN(parsed) ? 0 : parsed
@@ -199,11 +344,19 @@ function mapEspnCompetitionToTickerItem(competition, tournamentName) {
   const leftCompetitor = competitors[0] || null
   const rightCompetitor = competitors[1] || null
   const { tournamentName: normalizedTournamentName, categoryLabel } = splitTournamentAndCategoryLabel(tournamentName)
+  const setScores = competitors.length >= 2
+    ? (leftCompetitor?.linescores || rightCompetitor?.linescores)
+      ? extractEspnSetScores(leftCompetitor, rightCompetitor)
+      : []
+    : []
+  const aggregateScore = deriveAggregateScoreFromSetScores(setScores)
+  const leftScore = normalizeScoreTextValue(getCompetitorScore(leftCompetitor)) || aggregateScore?.leftScore || '-'
+  const rightScore = normalizeScoreTextValue(getCompetitorScore(rightCompetitor)) || aggregateScore?.rightScore || '-'
   const winnerSide = leftCompetitor?.winner
     ? 'left'
     : rightCompetitor?.winner
       ? 'right'
-      : ''
+      : aggregateScore?.winnerSide || ''
 
   return {
     id: competition?.id || competition?.uid || `${tournamentName}-${competition?.date || 'match'}`,
@@ -218,8 +371,10 @@ function mapEspnCompetitionToTickerItem(competition, tournamentName) {
     dateLabel: toDateLabel(competition?.date),
     leftName: getCompetitorName(leftCompetitor),
     rightName: getCompetitorName(rightCompetitor),
-    leftScore: getCompetitorScore(leftCompetitor),
-    rightScore: getCompetitorScore(rightCompetitor),
+    leftScore,
+    rightScore,
+    setScores,
+    setScoreText: buildSetScoreText(setScores),
     winnerSide,
     sortEpoch: toEpoch(competition?.date),
     isCompleted: Boolean(competition?.status?.type?.completed),
@@ -307,6 +462,64 @@ function getSportsradarScore(status, competitor, side) {
   return getCompetitorScore(competitor)
 }
 
+function extractSportsradarSetScores(status) {
+  const periodScores = Array.isArray(status?.period_scores) ? status.period_scores : []
+
+  return periodScores
+    .map((periodScore, index) => {
+      const leftScore = normalizeScoreTextValue(
+        periodScore?.home_score
+        ?? periodScore?.competitor1_score
+        ?? periodScore?.score1
+        ?? periodScore?.home
+        ?? periodScore?.competitor1,
+      )
+      const rightScore = normalizeScoreTextValue(
+        periodScore?.away_score
+        ?? periodScore?.competitor2_score
+        ?? periodScore?.score2
+        ?? periodScore?.away
+        ?? periodScore?.competitor2,
+      )
+
+      if (!leftScore && !rightScore) return null
+
+      const leftTiebreak = normalizeScoreTextValue(
+        periodScore?.home_tiebreak_score
+        ?? periodScore?.competitor1_tiebreak_score
+        ?? periodScore?.home_tiebreak
+        ?? periodScore?.competitor1_tiebreak,
+      )
+      const rightTiebreak = normalizeScoreTextValue(
+        periodScore?.away_tiebreak_score
+        ?? periodScore?.competitor2_tiebreak_score
+        ?? periodScore?.away_tiebreak
+        ?? periodScore?.competitor2_tiebreak,
+      )
+
+      const winnerSide = periodScore?.winner === 'home'
+        ? 'left'
+        : periodScore?.winner === 'away'
+          ? 'right'
+          : getWinnerSideByScore(leftScore, rightScore)
+
+      return {
+        index,
+        leftScore,
+        rightScore,
+        winnerSide,
+        display: formatSetScoreDisplay({
+          leftScore,
+          rightScore,
+          leftTiebreak,
+          rightTiebreak,
+          winnerSide,
+        }),
+      }
+    })
+    .filter(Boolean)
+}
+
 function isSportsradarCompletedStatus(status) {
   const normalizedStatus = String(status?.status || '').toLowerCase()
   const normalizedMatchStatus = String(status?.match_status || '').toLowerCase()
@@ -336,6 +549,8 @@ function mapSportsradarSummaryToTickerItem(summary) {
   const rawTournamentName = competition?.name || category?.name || 'ATP Tour'
   const { tournamentName: normalizedTournamentName, categoryLabel: parsedCategoryLabel } = splitTournamentAndCategoryLabel(rawTournamentName)
   const categoryLabel = normalizeCategoryLabel(category?.name) || parsedCategoryLabel
+  const setScores = extractSportsradarSetScores(status)
+  const aggregateScore = deriveAggregateScoreFromSetScores(setScores)
 
   const winnerSide = winnerId
     ? leftCompetitor?.id === winnerId
@@ -343,7 +558,7 @@ function mapSportsradarSummaryToTickerItem(summary) {
       : rightCompetitor?.id === winnerId
         ? 'right'
         : ''
-    : ''
+    : aggregateScore?.winnerSide || ''
 
   const startTime = sportEvent?.start_time || summary?.scheduled || ''
   const roundLabel = normalizeRoundLabel(round?.name || round?.type || (
@@ -361,8 +576,10 @@ function mapSportsradarSummaryToTickerItem(summary) {
     dateLabel: toDateLabel(startTime),
     leftName: getSportsradarCompetitorName(leftCompetitor),
     rightName: getSportsradarCompetitorName(rightCompetitor),
-    leftScore: getSportsradarScore(status, leftCompetitor, 'left'),
-    rightScore: getSportsradarScore(status, rightCompetitor, 'right'),
+    leftScore: normalizeScoreTextValue(getSportsradarScore(status, leftCompetitor, 'left')) || aggregateScore?.leftScore || '-',
+    rightScore: normalizeScoreTextValue(getSportsradarScore(status, rightCompetitor, 'right')) || aggregateScore?.rightScore || '-',
+    setScores,
+    setScoreText: buildSetScoreText(setScores),
     winnerSide,
     sortEpoch: toEpoch(startTime),
     isCompleted: isSportsradarCompletedStatus(status),
@@ -404,6 +621,41 @@ function parseScorePairFromText(rawText) {
     leftScore: directPair[1],
     rightScore: directPair[2],
   }
+}
+
+function extractApiTennisSetScores(fixture) {
+  const textCandidates = [
+    fixture?.event_final_result,
+    fixture?.event_result,
+    fixture?.event_game_result,
+    fixture?.event_status,
+  ]
+
+  for (const candidate of textCandidates) {
+    const setScores = extractSetScoresFromText(candidate)
+    if (setScores.length > 0) {
+      return setScores
+    }
+  }
+
+  const scorePair = parseScorePairFromText(
+    fixture?.event_final_result
+    || fixture?.event_result
+    || fixture?.event_game_result
+    || fixture?.event_status,
+  )
+
+  if (!scorePair) {
+    return []
+  }
+
+  return [{
+    index: 0,
+    leftScore: scorePair.leftScore,
+    rightScore: scorePair.rightScore,
+    winnerSide: getWinnerSideByScore(scorePair.leftScore, scorePair.rightScore),
+    display: formatSetScoreDisplay(scorePair),
+  }]
 }
 
 function normalizeApiTennisName(rawName) {
@@ -463,23 +715,28 @@ function mapApiTennisClassicFixtureToTickerItem(fixture) {
     || 'ATP Tour'
   const { tournamentName: normalizedTournamentName, categoryLabel: parsedCategoryLabel } = splitTournamentAndCategoryLabel(rawTournamentName)
   const categoryLabel = normalizeCategoryLabel(fixture?.event_category || fixture?.event_type_type) || parsedCategoryLabel
-
-  const scorePair = parseScorePairFromText(
+  const setScores = extractApiTennisSetScores(fixture)
+  const aggregateScore = setScores.length > 1 ? deriveAggregateScoreFromSetScores(setScores) : null
+  const explicitLeftScore = normalizeScoreTextValue(fixture?.first_player_score ?? fixture?.event_first_player_result)
+  const explicitRightScore = normalizeScoreTextValue(fixture?.second_player_score ?? fixture?.event_second_player_result)
+  const fallbackScorePair = parseScorePairFromText(
     fixture?.event_final_result
     || fixture?.event_result
     || fixture?.event_game_result
     || fixture?.event_status,
   )
 
-  const leftScore = scorePair?.leftScore
-    || String(fixture?.first_player_score ?? fixture?.event_first_player_result ?? '-').trim()
+  const leftScore = explicitLeftScore
+    || aggregateScore?.leftScore
+    || (setScores.length <= 1 ? normalizeScoreTextValue(fallbackScorePair?.leftScore) : '')
     || '-'
 
-  const rightScore = scorePair?.rightScore
-    || String(fixture?.second_player_score ?? fixture?.event_second_player_result ?? '-').trim()
+  const rightScore = explicitRightScore
+    || aggregateScore?.rightScore
+    || (setScores.length <= 1 ? normalizeScoreTextValue(fallbackScorePair?.rightScore) : '')
     || '-'
 
-  const winnerSide = getWinnerSideByScore(leftScore, rightScore)
+  const winnerSide = getWinnerSideByScore(leftScore, rightScore) || aggregateScore?.winnerSide || ''
   const statusLabel = toStatusLabel(fixture?.event_status || fixture?.event_live || fixture?.status)
   const atpHint = [
     normalizedTournamentName || rawTournamentName,
@@ -502,6 +759,8 @@ function mapApiTennisClassicFixtureToTickerItem(fixture) {
     rightName: normalizeApiTennisName(fixture?.event_second_player || fixture?.second_player),
     leftScore,
     rightScore,
+    setScores,
+    setScoreText: buildSetScoreText(setScores),
     winnerSide,
     sortEpoch: toEpoch(startTime),
     isCompleted: isCompletedLikeStatus(statusLabel),

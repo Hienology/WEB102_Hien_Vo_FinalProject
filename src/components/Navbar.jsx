@@ -38,6 +38,7 @@ export default function Navbar({
       activeAtpMatch.roundLabel,
       activeAtpMatch.statusLabel,
       activeAtpMatch.dateLabel,
+      activeAtpMatch.setScoreText ? `Sets: ${activeAtpMatch.setScoreText}` : '',
     ].filter(Boolean).join(' | ')
     : ''
 
@@ -230,7 +231,7 @@ export default function Navbar({
                       </span>
                       <span className="atp-score">{activeAtpMatch.rightScore}</span>
                     </p>
-                    <p className="atp-meta-line">{atpMetaText}</p>
+                    <p className="atp-meta-line" title={atpMetaText}>{atpMetaText}</p>
                   </div>
 
                   <button
@@ -253,7 +254,12 @@ export default function Navbar({
 
           <div className="navbar-end app-navbar-end">
             <div className="navbar-item app-navbar-search-item flex items-center gap-2">
-              {hasActiveSearch && <span className="tag is-warning is-light is-rounded">Filtered</span>}
+              <span
+                className={`tag is-warning is-light is-rounded ${hasActiveSearch ? '' : 'filtered-tag-placeholder'}`}
+                aria-hidden={!hasActiveSearch}
+              >
+                Filtered
+              </span>
               <button
                 type="button"
                 className="button is-light is-small navbar-search-trigger"

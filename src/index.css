@@ -98,8 +98,12 @@ body {
   background: #ffffff !important;
 }
 
+.filtered-tag-placeholder {
+  visibility: hidden;
+}
+
 .atp-ticker-item {
-  width: min(37rem, 100%);
+  width: min(46rem, 100%);
   min-height: 2rem;
   padding: 0.22rem 0.45rem !important;
   gap: 0.45rem;
@@ -182,9 +186,9 @@ body {
 }
 
 .atp-player {
-  max-width: 8.8rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
@@ -519,7 +523,7 @@ body {
   }
 
   .atp-player {
-    max-width: 6.4rem;
+    max-width: none;
   }
 
   .atp-match-counter {
