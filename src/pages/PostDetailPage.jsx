@@ -835,10 +835,10 @@ export default function PostDetailPage() {
                           ▲
                         </button>
                         <span className="comment-vote-badge">
-                          <span className="font-extrabold text-lg text-gray-800">
+                          <span className="font-extrabold text-lg">
                             {commentUpvotes}
                           </span>
-                          <span className="ml-2 text-red-500">▲</span>
+                          <span className="ml-2">▲</span>
                         </span>
                       </div>
 

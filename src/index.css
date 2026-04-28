@@ -293,13 +293,17 @@ body {
     border-radius: 0.45rem;
     background: inherit;
     border: 1px solid rgba(0,0,0,0.04);
-    transition: background-color 120ms ease, transform 80ms ease;
+    color: #1e3123;
+    transition: background 150ms ease, color 150ms ease, transform 80ms ease, box-shadow 150ms ease, border-color 150ms ease;
     min-width: 2.4rem;
   }
 
   .comment-vote-badge:hover {
-    background: var(--app-surface);
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, rgba(244, 63, 94, 0.96), rgba(16, 185, 129, 0.92));
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 10px 22px rgba(244, 63, 94, 0.35), 0 0 0 1px rgba(16, 185, 129, 0.18);
+    transform: translateY(-1px) scale(1.02);
   }
 
 .content-panel .title,
