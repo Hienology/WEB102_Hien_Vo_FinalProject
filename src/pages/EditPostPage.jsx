@@ -10,6 +10,7 @@ import {
   deleteMediaFile,
   isSupabaseMediaUrl,
   uploadMediaFile,
+  getQuarterMediaSize,
   validateMediaFile,
 } from '../lib/media'
 
@@ -24,6 +25,7 @@ export default function EditPostPage({ onDraftStateChange }) {
   const [selectedMediaFileName, setSelectedMediaFileName] = useState('')
   const [mediaType, setMediaType] = useState(null)
   const [mediaPreviewUrl, setMediaPreviewUrl] = useState('')
+  const [mediaPreviewSize, setMediaPreviewSize] = useState(null)
   const [isPreparingMedia, setIsPreparingMedia] = useState(false)
   const [initialValues, setInitialValues] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -45,6 +47,10 @@ export default function EditPostPage({ onDraftStateChange }) {
     if (mediaPreviewUrl.startsWith('blob:')) {
       URL.revokeObjectURL(mediaPreviewUrl)
     }
+  }, [mediaPreviewUrl])
+
+  useEffect(() => {
+    setMediaPreviewSize(null)
   }, [mediaPreviewUrl])
 
   useBeforeUnload((event) => {
@@ -183,8 +189,16 @@ export default function EditPostPage({ onDraftStateChange }) {
     setImageUrl(nextValue)
     setMediaType(getMediaTypeFromUrl(nextValue))
     setMediaPreviewUrl(nextValue)
+    setMediaPreviewSize(null)
     setSelectedMediaFileName('')
     setError(null)
+  }
+
+  function handleMediaLoad(event) {
+    const nextSize = getQuarterMediaSize(event.currentTarget)
+    if (nextSize) {
+      setMediaPreviewSize(nextSize)
+    }
   }
 
   async function handleMediaUploadChange(e) {
@@ -204,6 +218,7 @@ export default function EditPostPage({ onDraftStateChange }) {
     const nextPreviewUrl = URL.createObjectURL(nextFile)
     setMediaPreviewUrl(nextPreviewUrl)
     setMediaType(nextMediaType)
+    setMediaPreviewSize(null)
 
     try {
       const authorId = getUserId()
@@ -218,6 +233,7 @@ export default function EditPostPage({ onDraftStateChange }) {
       setError(uploadError.message || 'Unable to process the selected file.')
       setImageUrl('')
       setMediaPreviewUrl('')
+      setMediaPreviewSize(null)
       setMediaType(null)
       setSelectedMediaFileName('')
     } finally {
@@ -377,12 +393,26 @@ export default function EditPostPage({ onDraftStateChange }) {
                       src={mediaPreviewUrl}
                       controls
                       preload="metadata"
+                      onLoadedMetadata={handleMediaLoad}
+                      style={mediaPreviewSize ? {
+                        width: `${mediaPreviewSize.width}px`,
+                        height: `${mediaPreviewSize.height}px`,
+                        maxWidth: 'none',
+                        maxHeight: 'none',
+                      } : undefined}
                       className="media-preview-frame"
                     />
                   ) : (
                     <img
                       src={mediaPreviewUrl}
                       alt="Uploaded post media preview"
+                      onLoad={handleMediaLoad}
+                      style={mediaPreviewSize ? {
+                        width: `${mediaPreviewSize.width}px`,
+                        height: `${mediaPreviewSize.height}px`,
+                        maxWidth: 'none',
+                        maxHeight: 'none',
+                      } : undefined}
                       className="media-preview-frame"
                     />
                   )}

@@ -11,7 +11,7 @@ import {
   isSupabaseMediaUrl,
   parseCommentRecord,
   uploadMediaFile,
-  validateMediaFile,
+  validateCommentMediaFile,
 } from '../lib/media'
 
 function createCommentDraft() {
@@ -35,7 +35,7 @@ async function uploadMediaToDraft({
   setPreparing,
   setError,
 }) {
-  const { mediaType, error: validationError } = validateMediaFile(file)
+  const { mediaType, error: validationError } = await validateCommentMediaFile(file)
   if (validationError) {
     setError(validationError)
     setFileName?.('')
@@ -68,6 +68,63 @@ async function uploadMediaToDraft({
   } finally {
     setPreparing(false)
   }
+}
+
+function getQuarterMediaSize(target) {
+  const naturalWidth = target instanceof HTMLVideoElement ? target.videoWidth : target.naturalWidth
+  const naturalHeight = target instanceof HTMLVideoElement ? target.videoHeight : target.naturalHeight
+
+  if (naturalWidth > 0 && naturalHeight > 0) {
+    return {
+      width: Math.max(1, Math.round(naturalWidth / 4)),
+      height: Math.max(1, Math.round(naturalHeight / 4)),
+    }
+  }
+
+  return null
+}
+
+function CommentMediaAttachment({ mediaUrl, mediaType }) {
+  const [mediaSize, setMediaSize] = useState(null)
+
+  useEffect(() => {
+    setMediaSize(null)
+  }, [mediaUrl])
+
+  function handleMediaLoad(event) {
+    const nextSize = getQuarterMediaSize(event.currentTarget)
+    if (nextSize) {
+      setMediaSize(nextSize)
+    }
+  }
+
+  const mediaStyle = mediaSize ? {
+    width: `${mediaSize.width}px`,
+    height: `${mediaSize.height}px`,
+  } : undefined
+
+  return (
+    <div className="comment-media-shell mt-2">
+      {mediaType === 'video' ? (
+        <video
+          src={mediaUrl}
+          controls
+          preload="metadata"
+          onLoadedMetadata={handleMediaLoad}
+          style={mediaStyle}
+          className="comment-media"
+        />
+      ) : (
+        <img
+          src={mediaUrl}
+          alt="Comment media"
+          onLoad={handleMediaLoad}
+          style={mediaStyle}
+          className="comment-media"
+        />
+      )}
+    </div>
+  )
 }
 
 export default function PostDetailPage() {
@@ -156,24 +213,35 @@ export default function PostDetailPage() {
 
     if (!nextCommentContent.content && !nextCommentContent.media_url) return
 
+    setError(null)
     setSubmittingComment(true)
 
-    const { data, error: commentError } = await supabase
-      .from('comments')
-      .insert({
-        post_id: id,
-        ...nextCommentContent,
-        author_id: userId,
+    try {
+      const { data, error: commentError } = await supabase
+        .from('comments')
+        .insert({
+          post_id: id,
+          ...nextCommentContent,
+          author_id: userId,
           upvotes: 0,
-      })
-      .select('*')
-      .single()
+        })
+        .select('*')
+        .single()
 
-    if (!commentError && data) {
-      setComments((prev) => [...prev, data])
-      setCommentDraft(createCommentDraft())
+      if (commentError) {
+        setError(commentError.message)
+        return
+      }
+
+      if (data) {
+        setComments((prev) => [...prev, data])
+        setCommentDraft(createCommentDraft())
+      }
+    } catch (submitError) {
+      setError(submitError.message || 'Unable to post comment.')
+    } finally {
+      setSubmittingComment(false)
     }
-    setSubmittingComment(false)
   }
 
   function handleNewCommentTextChange(e) {
@@ -333,14 +401,10 @@ export default function PostDetailPage() {
 
   function handlePostMediaLoad(event) {
     const target = event.currentTarget
-    const naturalWidth = target instanceof HTMLVideoElement ? target.videoWidth : target.naturalWidth
-    const naturalHeight = target instanceof HTMLVideoElement ? target.videoHeight : target.naturalHeight
+    const nextSize = getQuarterMediaSize(target)
 
-    if (naturalWidth > 0 && naturalHeight > 0) {
-      setPostMediaSize({
-        width: Math.max(1, Math.round(naturalWidth / 4)),
-        height: Math.max(1, Math.round(naturalHeight / 4)),
-      })
+    if (nextSize) {
+      setPostMediaSize(nextSize)
     }
   }
 
@@ -518,7 +582,7 @@ export default function PostDetailPage() {
         )}
 
         {post.image_url && (
-          <figure className="image mb-4 rounded overflow-hidden post-detail-media-shell">
+          <figure className="image mb-4 rounded post-detail-media-shell">
             {postMediaType === 'video' ? (
               <video
                 src={post.image_url}
@@ -527,6 +591,9 @@ export default function PostDetailPage() {
                 onLoadedMetadata={handlePostMediaLoad}
                 style={postMediaSize ? {
                   width: `${postMediaSize.width}px`,
+                  height: `${postMediaSize.height}px`,
+                  maxWidth: 'none',
+                  maxHeight: 'none',
                 } : undefined}
                 className="rounded post-detail-media"
               />
@@ -537,6 +604,9 @@ export default function PostDetailPage() {
                 onLoad={handlePostMediaLoad}
                 style={postMediaSize ? {
                   width: `${postMediaSize.width}px`,
+                  height: `${postMediaSize.height}px`,
+                  maxWidth: 'none',
+                  maxHeight: 'none',
                 } : undefined}
                 className="rounded post-detail-media"
                 onError={(e) => { e.currentTarget.style.display = 'none' }}
@@ -662,21 +732,11 @@ export default function PostDetailPage() {
                         )}
 
                         {editingCommentDraft.previewUrl && (
-                          <div className="media-preview-shell mt-3">
-                            {editingCommentDraft.mediaType === 'video' ? (
-                              <video
-                                src={editingCommentDraft.previewUrl}
-                                controls
-                                preload="metadata"
-                                className="media-preview-frame"
-                              />
-                            ) : (
-                              <img
-                                src={editingCommentDraft.previewUrl}
-                                alt="Comment media preview"
-                                className="media-preview-frame"
-                              />
-                            )}
+                          <div className="mt-3">
+                            <CommentMediaAttachment
+                              mediaUrl={editingCommentDraft.previewUrl}
+                              mediaType={editingCommentDraft.mediaType}
+                            />
 
                             <button
                               type="button"
@@ -719,22 +779,10 @@ export default function PostDetailPage() {
                       )}
 
                       {parsedComment.mediaUrl && (
-                        <div className="comment-media-shell mt-2">
-                          {parsedComment.mediaType === 'video' ? (
-                            <video
-                              src={parsedComment.mediaUrl}
-                              controls
-                              preload="metadata"
-                              className="comment-media"
-                            />
-                          ) : (
-                            <img
-                              src={parsedComment.mediaUrl}
-                              alt="Comment media"
-                              className="comment-media"
-                            />
-                          )}
-                        </div>
+                        <CommentMediaAttachment
+                          mediaUrl={parsedComment.mediaUrl}
+                          mediaType={parsedComment.mediaType}
+                        />
                       )}
 
                       <div className="mt-3 flex items-center gap-2">
@@ -841,7 +889,7 @@ export default function PostDetailPage() {
                 }}
               />
             </div>
-            <p className="help">Images up to 10MB, videos up to 25MB.</p>
+            <p className="help">Images up to 10MB, GIFs up to 60 seconds and 25MB, videos up to 25MB.</p>
 
             {isPreparingCommentMedia && (
               <div className="inline-loading-row" role="status" aria-live="polite">
@@ -851,21 +899,11 @@ export default function PostDetailPage() {
             )}
 
             {commentDraft.previewUrl && (
-              <div className="media-preview-shell mt-3">
-                {commentDraft.mediaType === 'video' ? (
-                  <video
-                    src={commentDraft.previewUrl}
-                    controls
-                    preload="metadata"
-                    className="media-preview-frame"
-                  />
-                ) : (
-                  <img
-                    src={commentDraft.previewUrl}
-                    alt="Comment media preview"
-                    className="media-preview-frame"
-                  />
-                )}
+              <div className="mt-3">
+                <CommentMediaAttachment
+                  mediaUrl={commentDraft.previewUrl}
+                  mediaType={commentDraft.mediaType}
+                />
 
                 <button
                   type="button"
