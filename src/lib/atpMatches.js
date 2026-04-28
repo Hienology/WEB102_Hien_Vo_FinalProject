@@ -922,35 +922,36 @@ async function requestJson(url, { signal } = {}) {
   return response.json()
 }
 
-function filterMatchesByDateRange(matches, { daysBack = 2 } = {}) {
+function filterMatchesByDateRange(matches, { daysBack = 2, daysForward = 7 } = {}) {
   const now = Date.now()
-  const cutoffTime = now - (daysBack * 24 * 60 * 60 * 1000)
+  const earliestTime = now - (daysBack * 24 * 60 * 60 * 1000)
+  const latestTime = now + (daysForward * 24 * 60 * 60 * 1000)
 
   return matches.filter((match) => {
     const matchTime = match?.sortEpoch || 0
-    return matchTime >= cutoffTime
+    return matchTime >= earliestTime && matchTime <= latestTime
   })
 }
 
-export async function fetchAtpMatches({ signal, daysBack = 2, includeAllFromRange = true } = {}) {
+export async function fetchAtpMatches({ signal, daysBack = 1, daysForward = 1, includeAllFromRange = true } = {}) {
   const provider = resolveAtpProvider()
 
   if (provider === 'sportsradar') {
     const sportsradarPayload = await requestJson(resolveSportsradarProxyUrl(), { signal })
     const allMatches = parseSportsradarAtpMatches(sportsradarPayload, { limit: 1000 })
-    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
+    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack, daysForward }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
   }
 
   if (provider === 'apitennis') {
     const apiTennisPayload = await requestJson(resolveApiTennisProxyUrl(), { signal })
     const allMatches = parseApiTennisAtpMatches(apiTennisPayload, { limit: 1000 })
-    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
+    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack, daysForward }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
   }
 
   if (provider === 'espn') {
     const espnPayload = await requestJson(ESPN_ATP_SCOREBOARD_URL, { signal })
     const allMatches = parseEspnAtpMatches(espnPayload, { limit: 1000 })
-    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
+    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack, daysForward }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
   }
 
   let sportsradarError = null
@@ -1012,7 +1013,7 @@ export async function fetchAtpMatches({ signal, daysBack = 2, includeAllFromRang
 
   if (rankedResults.length > 0) {
     const bestMatches = rankedResults[0].matches
-    return includeAllFromRange ? filterMatchesByDateRange(bestMatches, { daysBack }) : bestMatches
+    return includeAllFromRange ? filterMatchesByDateRange(bestMatches, { daysBack, daysForward }) : bestMatches
   }
 
   if (sportsradarError && apiTennisError && espnError) {
