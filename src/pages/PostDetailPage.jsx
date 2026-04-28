@@ -670,7 +670,7 @@ export default function PostDetailPage() {
       <div className="box content-panel">
         <div className="flex justify-between items-center gap-3 mb-4 comment-toolbar">
           <h2 className="title is-5 text-gray-800 mb-0">
-            Comments ({comments.length})
+            Comments (<strong>{comments.length}</strong>)
           </h2>
 
           {comments.length > 0 && (
@@ -827,13 +827,14 @@ export default function PostDetailPage() {
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           type="button"
-                          className={`button is-small is-light ${upvotingCommentId === comment.id ? 'is-loading' : ''}`}
+                          className={`button is-small is-danger is-outlined ${upvotingCommentId === comment.id ? 'is-loading' : ''}`}
                           onClick={() => handleUpvoteComment(comment)}
                           disabled={upvotingCommentId === comment.id || isSavingThisComment || isDeletingThisComment}
+                          title="Upvote this comment"
                         >
-                          ▲ Upvote
+                          ▲
                         </button>
-                        <span className="text-sm font-semibold text-gray-700">
+                        <span className="font-bold text-gray-700">
                           {commentUpvotes} {commentUpvotes === 1 ? 'vote' : 'votes'}
                         </span>
                       </div>
