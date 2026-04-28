@@ -834,7 +834,7 @@ export default function PostDetailPage() {
                         >
                           ▲
                         </button>
-                        <span className="font-bold text-gray-700">
+                        <span className="font-extrabold text-lg text-gray-800">
                           {commentUpvotes} <span className="text-red-500">▲</span>
                         </span>
                       </div>
