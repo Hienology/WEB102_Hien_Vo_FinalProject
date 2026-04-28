@@ -308,6 +308,169 @@ function getRecentDetailScore(matches) {
   return matches.slice(0, RECENT_MATCH_DETAIL_WINDOW).length
 }
 
+function getMatchEpoch(match) {
+  const epoch = Number(match?.sortEpoch)
+  return Number.isFinite(epoch) ? epoch : 0
+}
+
+function isScheduledLikeStatus(statusText) {
+  const normalized = String(statusText || '').trim().toLowerCase()
+  if (!normalized) return false
+
+  return normalized.includes('scheduled')
+    || normalized.includes('not started')
+    || normalized.includes('to be decided')
+    || normalized.includes('tbd')
+    || /\b\d{1,2}\/\d{1,2}\b/.test(normalized)
+    || /\b(am|pm)\b/.test(normalized)
+}
+
+function isLiveLikeStatus(statusText) {
+  const normalized = String(statusText || '').trim().toLowerCase()
+  if (!normalized || isCompletedLikeStatus(normalized) || isScheduledLikeStatus(normalized)) {
+    return false
+  }
+
+  return normalized.includes('live')
+    || normalized.includes('in progress')
+    || normalized.includes('playing')
+    || normalized.includes('set')
+    || normalized.includes('serving')
+    || normalized.includes('break')
+    || normalized.includes('retired')
+    || normalized.includes('walkover')
+    || normalized.includes('suspended')
+    || normalized.includes('delayed')
+}
+
+function createLocalDateWindow({ daysBack = 2, daysForward = 7, referenceTime = Date.now() } = {}) {
+  const now = new Date(referenceTime)
+  const earliestTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack).getTime()
+  const latestTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysForward + 1).getTime() - 1
+
+  return {
+    earliestTime,
+    latestTime,
+  }
+}
+
+function normalizeMatchIdentityPart(rawText) {
+  return String(rawText || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function buildMatchIdentityKey(match) {
+  const epoch = getMatchEpoch(match)
+  const epochBucket = epoch > 0 ? Math.round(epoch / (30 * 60 * 1000)) : 0
+  const playerTokens = [
+    normalizeMatchIdentityPart(match?.leftName),
+    normalizeMatchIdentityPart(match?.rightName),
+  ].sort()
+
+  return [
+    normalizeMatchIdentityPart(match?.tournamentName),
+    normalizeMatchIdentityPart(match?.roundLabel),
+    ...playerTokens,
+    epochBucket,
+  ].join('|')
+}
+
+function getMatchQualityScore(match, providerPriority = 0) {
+  let score = providerPriority * 2
+
+  if (hasFullMatchScore(match)) {
+    score += 40
+  } else if (hasScoreValue(match?.leftScore) || hasScoreValue(match?.rightScore)) {
+    score += 12
+  }
+
+  score += Math.min((match?.setScores || []).length, 5) * 6
+
+  if (match?.winnerSide) score += 4
+  if (match?.leftName && match.leftName !== 'TBD') score += 2
+  if (match?.rightName && match.rightName !== 'TBD') score += 2
+  if (match?.roundLabel) score += 2
+  if (match?.categoryLabel) score += 2
+  if (match?.tournamentName) score += 2
+  if (isLiveLikeStatus(match?.statusLabel)) score += 3
+  if (match?.isCompleted) score += 1
+
+  return score
+}
+
+function mergeProviderMatches(results) {
+  const mergedMatchesByKey = new Map()
+
+  results.forEach((result) => {
+    result.matches.forEach((match) => {
+      const key = buildMatchIdentityKey(match)
+      const candidate = {
+        ...match,
+        providerName: match?.providerName || result.providerName,
+        providerPriority: result.providerPriority,
+      }
+      const current = mergedMatchesByKey.get(key)
+
+      if (!current) {
+        mergedMatchesByKey.set(key, candidate)
+        return
+      }
+
+      const candidateQuality = getMatchQualityScore(candidate, candidate.providerPriority)
+      const currentQuality = getMatchQualityScore(current, current.providerPriority)
+
+      if (candidateQuality > currentQuality) {
+        mergedMatchesByKey.set(key, candidate)
+        return
+      }
+
+      if (candidateQuality === currentQuality && getMatchEpoch(candidate) > getMatchEpoch(current)) {
+        mergedMatchesByKey.set(key, candidate)
+      }
+    })
+  })
+
+  return [...mergedMatchesByKey.values()].map(({ providerPriority, ...match }) => match)
+}
+
+function getMatchDisplayBucket(match, referenceTime = Date.now()) {
+  if (isLiveLikeStatus(match?.statusLabel)) return 0
+
+  if (!match?.isCompleted) {
+    return getMatchEpoch(match) >= referenceTime ? 1 : 2
+  }
+
+  return 3
+}
+
+function orderMatchesForTicker(matches, { referenceTime = Date.now() } = {}) {
+  return [...matches].sort((left, right) => {
+    const leftBucket = getMatchDisplayBucket(left, referenceTime)
+    const rightBucket = getMatchDisplayBucket(right, referenceTime)
+
+    if (leftBucket !== rightBucket) {
+      return leftBucket - rightBucket
+    }
+
+    const leftEpoch = getMatchEpoch(left)
+    const rightEpoch = getMatchEpoch(right)
+
+    if (leftBucket === 3) {
+      if (rightEpoch !== leftEpoch) {
+        return rightEpoch - leftEpoch
+      }
+    } else if (leftEpoch !== rightEpoch) {
+      return leftEpoch - rightEpoch
+    }
+
+    return String(left?.tournamentName || '').localeCompare(String(right?.tournamentName || ''))
+      || String(left?.leftName || '').localeCompare(String(right?.leftName || ''))
+      || String(left?.rightName || '').localeCompare(String(right?.rightName || ''))
+  })
+}
+
 function keepLatestThenCompleted(matches, limit) {
   const sortedByDate = [...matches]
     .sort((a, b) => a.sortEpoch - b.sortEpoch)
@@ -441,7 +604,7 @@ function getSportsradarScore(status, competitor, side) {
     : ['away_score', 'competitor2_score', 'score2']
 
   for (const key of statusKeys) {
-    const score = status?.[key]
+    const score = status?.key]
     if (score !== undefined && score !== null && score !== '') {
       return String(score)
     }
@@ -455,7 +618,7 @@ function getSportsradarScore(status, competitor, side) {
       : ['away_score', 'competitor2_score']
 
     for (const key of periodKeys) {
-      const score = latestPeriod?.[key]
+      const score = latestPeriod?.key]
       if (score !== undefined && score !== null && score !== '') {
         return String(score)
       }
@@ -583,460 +746,4 @@ function mapSportsradarSummaryToTickerItem(summary) {
     rightScore: normalizeScoreTextValue(getSportsradarScore(status, rightCompetitor, 'right')) || aggregateScore?.rightScore || '-',
     setScores,
     setScoreText: buildSetScoreText(setScores),
-    winnerSide,
-    sortEpoch: toEpoch(startTime),
-    isCompleted: isSportsradarCompletedStatus(status),
-    competitionGender,
-    atpHint,
-  }
-}
-
-function isSportsradarAtpMatch(match) {
-  const hintText = String(match?.atpHint || '').toLowerCase()
-  const gender = String(match?.competitionGender || '').toLowerCase()
-
-  if (hasWtaMarker(hintText)) return false
-
-  if (gender && gender !== 'men') return false
-
-  return isAtpFamilyDescriptor(`${hintText} ${gender}`)
-}
-
-export function parseSportsradarAtpMatches(payload, { limit = DEFAULT_ATP_MATCH_LIMIT } = {}) {
-  const summaries = payload?.summaries || payload?.results || []
-  const mappedMatches = summaries
-    .map((summary) => mapSportsradarSummaryToTickerItem(summary))
-    .filter(Boolean)
-
-  const atpMatches = mappedMatches.filter((match) => isSportsradarAtpMatch(match))
-
-  return keepLatestThenCompleted(atpMatches, limit)
-}
-
-function parseScorePairFromText(rawText) {
-  const text = String(rawText || '').trim()
-  if (!text) return null
-
-  const directPair = text.match(/(\d+)\s*[-:]\s*(\d+)/)
-  if (!directPair) return null
-
-  return {
-    leftScore: directPair[1],
-    rightScore: directPair[2],
-  }
-}
-
-function extractApiTennisSetScores(fixture) {
-  const textCandidates = [
-    fixture?.event_final_result,
-    fixture?.event_result,
-    fixture?.event_game_result,
-    fixture?.event_status,
-  ]
-
-  for (const candidate of textCandidates) {
-    const setScores = extractSetScoresFromText(candidate)
-    if (setScores.length > 0) {
-      return setScores
-    }
-  }
-
-  const scorePair = parseScorePairFromText(
-    fixture?.event_final_result
-    || fixture?.event_result
-    || fixture?.event_game_result
-    || fixture?.event_status,
-  )
-
-  if (!scorePair) {
-    return []
-  }
-
-  return [{
-    index: 0,
-    leftScore: scorePair.leftScore,
-    rightScore: scorePair.rightScore,
-    winnerSide: getWinnerSideByScore(scorePair.leftScore, scorePair.rightScore),
-    display: formatSetScoreDisplay(scorePair),
-  }]
-}
-
-function normalizeApiTennisName(rawName) {
-  const normalizedName = String(rawName || '').trim()
-  return normalizedName || 'TBD'
-}
-
-function getWinnerSideByScore(leftScore, rightScore) {
-  const leftValue = Number.parseInt(leftScore, 10)
-  const rightValue = Number.parseInt(rightScore, 10)
-
-  if (!Number.isFinite(leftValue) || !Number.isFinite(rightValue) || leftValue === rightValue) {
-    return ''
-  }
-
-  return leftValue > rightValue ? 'left' : 'right'
-}
-
-function buildApiTennisDateTime(rawDate, rawTime) {
-  const dateText = String(rawDate || '').trim()
-  const timeText = String(rawTime || '').trim()
-
-  if (!dateText) return ''
-  if (dateText.includes('T')) return dateText
-
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateText)) {
-    const [day, month, year] = dateText.split('/')
-    const safeTime = /^\d{2}:\d{2}/.test(timeText) ? `${timeText}:00` : '00:00:00'
-    return `${year}-${month}-${day}T${safeTime}Z`
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateText)) {
-    const safeTime = /^\d{2}:\d{2}/.test(timeText) ? `${timeText}:00` : '00:00:00'
-    return `${dateText}T${safeTime}Z`
-  }
-
-  return dateText
-}
-
-function isCompletedLikeStatus(statusText) {
-  const normalized = String(statusText || '').trim().toLowerCase()
-  if (!normalized) return false
-
-  return normalized.includes('final')
-    || normalized.includes('finished')
-    || normalized.includes('ended')
-    || normalized.includes('closed')
-    || normalized.includes('complete')
-    || normalized === 'ft'
-}
-
-function mapApiTennisClassicFixtureToTickerItem(fixture) {
-  const startTime = buildApiTennisDateTime(fixture?.event_date, fixture?.event_time)
-  const rawTournamentName = fixture?.tournament_name
-    || fixture?.league_name
-    || fixture?.event_tournament
-    || 'ATP Tour'
-  const { tournamentName: normalizedTournamentName, categoryLabel: parsedCategoryLabel } = splitTournamentAndCategoryLabel(rawTournamentName)
-  const categoryLabel = normalizeCategoryLabel(fixture?.event_category || fixture?.event_type_type) || parsedCategoryLabel
-  const setScores = extractApiTennisSetScores(fixture)
-  const aggregateScore = setScores.length > 1 ? deriveAggregateScoreFromSetScores(setScores) : null
-  const explicitLeftScore = normalizeScoreTextValue(fixture?.first_player_score ?? fixture?.event_first_player_result)
-  const explicitRightScore = normalizeScoreTextValue(fixture?.second_player_score ?? fixture?.event_second_player_result)
-  const fallbackScorePair = parseScorePairFromText(
-    fixture?.event_final_result
-    || fixture?.event_result
-    || fixture?.event_game_result
-    || fixture?.event_status,
-  )
-
-  const leftScore = explicitLeftScore
-    || aggregateScore?.leftScore
-    || (setScores.length <= 1 ? normalizeScoreTextValue(fallbackScorePair?.leftScore) : '')
-    || '-'
-
-  const rightScore = explicitRightScore
-    || aggregateScore?.rightScore
-    || (setScores.length <= 1 ? normalizeScoreTextValue(fallbackScorePair?.rightScore) : '')
-    || '-'
-
-  const winnerSide = getWinnerSideByScore(leftScore, rightScore) || aggregateScore?.winnerSide || ''
-  const statusLabel = toStatusLabel(fixture?.event_status || fixture?.event_live || fixture?.status)
-  const atpHint = [
-    normalizedTournamentName || rawTournamentName,
-    categoryLabel,
-    fixture?.event_type_type,
-    fixture?.event_round,
-    fixture?.event_category,
-  ].filter(Boolean).join(' ')
-
-  return {
-    id: fixture?.event_key
-      || fixture?.event_id
-      || `${rawTournamentName}-${startTime || fixture?.event_date || 'match'}`,
-    tournamentName: normalizeTitleLabel(normalizedTournamentName || rawTournamentName),
-    categoryLabel,
-    roundLabel: normalizeRoundLabel(fixture?.event_round || fixture?.round || ''),
-    statusLabel,
-    dateLabel: toDateLabel(startTime),
-    leftName: normalizeApiTennisName(fixture?.event_first_player || fixture?.first_player),
-    rightName: normalizeApiTennisName(fixture?.event_second_player || fixture?.second_player),
-    leftScore,
-    rightScore,
-    setScores,
-    setScoreText: buildSetScoreText(setScores),
-    winnerSide,
-    sortEpoch: toEpoch(startTime),
-    isCompleted: isCompletedLikeStatus(statusLabel),
-    atpHint,
-    tourCode: String(fixture?.event_tour || fixture?.tour || '').trim().toLowerCase(),
-  }
-}
-
-function pickApiSportsPlayers(fixture) {
-  if (Array.isArray(fixture?.players) && fixture.players.length >= 2) {
-    return fixture.players
-  }
-
-  if (fixture?.players?.home && fixture?.players?.away) {
-    return [fixture.players.home, fixture.players.away]
-  }
-
-  if (Array.isArray(fixture?.competitors) && fixture.competitors.length >= 2) {
-    return fixture.competitors
-  }
-
-  return []
-}
-
-function getApiSportsSideScore(rawScores, side) {
-  const scoreKeys = side === 'left'
-    ? ['home', 'player_1', 'first', 'left', 'team1']
-    : ['away', 'player_2', 'second', 'right', 'team2']
-
-  if (rawScores && typeof rawScores === 'object' && !Array.isArray(rawScores)) {
-    for (const key of scoreKeys) {
-      const score = rawScores[key]
-      if (score !== undefined && score !== null && score !== '') {
-        return String(score)
-      }
-    }
-  }
-
-  if (Array.isArray(rawScores) && rawScores.length >= 2) {
-    const score = side === 'left' ? rawScores[0] : rawScores[1]
-    if (score !== undefined && score !== null && score !== '') {
-      return String(score)
-    }
-  }
-
-  return '-'
-}
-
-function mapApiSportsFixtureToTickerItem(fixture) {
-  const players = pickApiSportsPlayers(fixture)
-  const leftPlayer = players[0] || null
-  const rightPlayer = players[1] || null
-  const statusLabel = toStatusLabel(fixture?.status?.long || fixture?.status?.short || fixture?.status)
-  const rawTournamentName = fixture?.league?.name
-    || fixture?.tournament?.name
-    || fixture?.competition?.name
-    || 'ATP Tour'
-    || 'ATP Challenger Tour'
-  const { tournamentName: normalizedTournamentName, categoryLabel: parsedCategoryLabel } = splitTournamentAndCategoryLabel(rawTournamentName)
-  const categoryLabel = normalizeCategoryLabel(fixture?.league?.type || fixture?.competition?.type) || parsedCategoryLabel
-  const rawScores = fixture?.scores || fixture?.score || fixture?.result
-  const leftScore = getApiSportsSideScore(rawScores, 'left')
-  const rightScore = getApiSportsSideScore(rawScores, 'right')
-
-  return {
-    id: fixture?.id || fixture?.fixture?.id || `${rawTournamentName}-${fixture?.date || 'match'}`,
-    tournamentName: normalizeTitleLabel(normalizedTournamentName || rawTournamentName),
-    categoryLabel,
-    roundLabel: normalizeRoundLabel(fixture?.round || fixture?.fixture?.round || ''),
-    statusLabel,
-    dateLabel: toDateLabel(fixture?.date),
-    leftName: normalizeApiTennisName(leftPlayer?.name || leftPlayer?.player?.name),
-    rightName: normalizeApiTennisName(rightPlayer?.name || rightPlayer?.player?.name),
-    leftScore,
-    rightScore,
-    winnerSide: leftPlayer?.winner
-      ? 'left'
-      : rightPlayer?.winner
-        ? 'right'
-        : getWinnerSideByScore(leftScore, rightScore),
-    sortEpoch: toEpoch(fixture?.date || fixture?.fixture?.date),
-    isCompleted: Boolean(fixture?.status?.finished) || isCompletedLikeStatus(statusLabel),
-    atpHint: [
-      normalizedTournamentName || rawTournamentName,
-      categoryLabel,
-      fixture?.league?.type,
-      fixture?.round,
-    ].filter(Boolean).join(' '),
-    tourCode: String(fixture?.tour || fixture?.league?.name || '').trim().toLowerCase(),
-  }
-}
-
-function isApiTennisAtpMatch(match) {
-  const hintText = String(match?.atpHint || '').toLowerCase()
-  const tourCode = String(match?.tourCode || '').toLowerCase()
-
-  if (hasWtaMarker(hintText) || hasWtaMarker(tourCode)) return false
-
-  return isAtpFamilyDescriptor(`${hintText} ${tourCode}`)
-}
-
-export function parseApiTennisAtpMatches(payload, { limit = DEFAULT_ATP_MATCH_LIMIT } = {}) {
-  const fixtures = Array.isArray(payload?.result)
-    ? payload.result
-    : Array.isArray(payload?.response)
-      ? payload.response
-      : Array.isArray(payload?.fixtures)
-        ? payload.fixtures
-        : []
-
-  const mappedMatches = fixtures.map((fixture) => {
-    if (fixture?.event_first_player || fixture?.event_second_player) {
-      return mapApiTennisClassicFixtureToTickerItem(fixture)
-    }
-
-    return mapApiSportsFixtureToTickerItem(fixture)
-  })
-
-  const atpMatches = mappedMatches.filter((match) => isApiTennisAtpMatch(match))
-  return keepLatestThenCompleted(atpMatches, limit)
-}
-
-function resolveAtpProvider() {
-  const rawProvider = String(import.meta.env.VITE_ATP_PROVIDER || DEFAULT_ATP_PROVIDER)
-    .trim()
-    .toLowerCase()
-
-  if (rawProvider === 'sportsradar' || rawProvider === 'apitennis' || rawProvider === 'espn') {
-    return rawProvider
-  }
-
-  return DEFAULT_ATP_PROVIDER
-}
-
-function resolveApiTennisProxyUrl() {
-  const rawUrl = String(import.meta.env.VITE_API_TENNIS_PROXY_URL || API_TENNIS_PROXY_URL)
-    .trim()
-
-  return rawUrl || API_TENNIS_PROXY_URL
-}
-
-function resolveSportsradarProxyUrl() {
-  const rawUrl = String(import.meta.env.VITE_SPORTRADAR_PROXY_URL || SPORTRADAR_ATP_PROXY_URL)
-    .trim()
-
-  return rawUrl || SPORTRADAR_ATP_PROXY_URL
-}
-
-async function requestJson(url, { signal } = {}) {
-  const response = await fetch(url, {
-    signal,
-    cache: 'no-store',
-  })
-
-  if (!response.ok) {
-    throw new Error(`Failed request ${url} with status ${response.status}`)
-  }
-
-  return response.json()
-}
-
-function filterMatchesByDateRange(matches, { daysBack = 2, daysForward = 7 } = {}) {
-  const now = Date.now()
-  const earliestTime = now - (daysBack * 24 * 60 * 60 * 1000)
-  const latestTime = now + (daysForward * 24 * 60 * 60 * 1000)
-
-  return matches.filter((match) => {
-    const matchTime = match?.sortEpoch || 0
-    return matchTime >= earliestTime && matchTime <= latestTime
-  })
-}
-
-export async function fetchAtpMatches({ signal, daysBack = 1, daysForward = 1, includeAllFromRange = true } = {}) {
-  const provider = resolveAtpProvider()
-
-  if (provider === 'sportsradar') {
-    const sportsradarPayload = await requestJson(resolveSportsradarProxyUrl(), { signal })
-    const allMatches = parseSportsradarAtpMatches(sportsradarPayload, { limit: 1000 })
-    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack, daysForward }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
-  }
-
-  if (provider === 'apitennis') {
-    const apiTennisPayload = await requestJson(resolveApiTennisProxyUrl(), { signal })
-    const allMatches = parseApiTennisAtpMatches(apiTennisPayload, { limit: 1000 })
-    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack, daysForward }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
-  }
-
-  if (provider === 'espn') {
-    const espnPayload = await requestJson(ESPN_ATP_SCOREBOARD_URL, { signal })
-    const allMatches = parseEspnAtpMatches(espnPayload, { limit: 1000 })
-    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack, daysForward }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
-  }
-
-  let sportsradarError = null
-  let apiTennisError = null
-  let espnError = null
-  let sportsradarMatches = []
-  let apiTennisMatches = []
-  let espnMatches = []
-
-  try {
-    const sportsradarPayload = await requestJson(resolveSportsradarProxyUrl(), { signal })
-    sportsradarMatches = parseSportsradarAtpMatches(sportsradarPayload, { limit: 1000 })
-  } catch (error) {
-    sportsradarError = error
-  }
-
-  try {
-    const apiTennisPayload = await requestJson(resolveApiTennisProxyUrl(), { signal })
-    apiTennisMatches = parseApiTennisAtpMatches(apiTennisPayload, { limit: 1000 })
-  } catch (error) {
-    apiTennisError = error
-  }
-
-  try {
-    const espnPayload = await requestJson(ESPN_ATP_SCOREBOARD_URL, { signal })
-    espnMatches = parseEspnAtpMatches(espnPayload, { limit: 1000 })
-  } catch (error) {
-    espnError = error
-  }
-
-  const rankedResults = [
-    {
-      providerName: 'sportsradar',
-      providerPriority: 3,
-      allMatches: sportsradarMatches,
-    },
-    {
-      providerName: 'apitennis',
-      providerPriority: 2,
-      allMatches: apiTennisMatches,
-    },
-    {
-      providerName: 'espn',
-      providerPriority: 1,
-      allMatches: espnMatches,
-    },
-  ]
-    .map((result) => {
-      const matches = includeAllFromRange
-        ? filterMatchesByDateRange(result.allMatches, { daysBack, daysForward })
-        : result.allMatches
-
-      return {
-        ...result,
-        matches,
-        detailScore: getRecentDetailScore(matches),
-      }
-    })
-    .filter((result) => result.matches.length > 0)
-    .sort((left, right) => {
-      if (right.matches.length !== left.matches.length) {
-        return right.matches.length - left.matches.length
-      }
-
-      if (right.detailScore !== left.detailScore) {
-        return right.detailScore - left.detailScore
-      }
-
-      return right.providerPriority - left.providerPriority
-    })
-
-  if (rankedResults.length > 0) {
-    return rankedResults[0].matches
-  }
-
-  if (sportsradarError && apiTennisError && espnError) {
-    throw new Error('Sportsradar, API-Tennis, and ESPN ATP feeds are unavailable.')
-  }
-
-  return []
-}
-
-export function parseAtpMatches(payload, options = {}) {
-  return parseEspnAtpMatches(payload, options)
-}
+    winnerSide

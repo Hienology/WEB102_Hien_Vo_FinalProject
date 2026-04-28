@@ -3,6 +3,30 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { fetchAtpMatches } from '../lib/atpMatches'
 import { formatTagsInput, parseTagInput } from '../lib/tags'
 
+function hasVisibleMatchScore(match) {
+  return [match?.leftScore, match?.rightScore].some((score) => {
+    const normalizedScore = String(score ?? '').trim()
+    return normalizedScore !== '' && normalizedScore !== '-'
+  })
+}
+
+function buildAtpMetaText(match) {
+  if (!match) return ''
+
+  const statusText = String(match.statusLabel || '')
+  const statusIncludesDate = match.dateLabel
+    && statusText.toLowerCase().includes(String(match.dateLabel).toLowerCase())
+
+  return [
+    match.tournamentName,
+    match.categoryLabel,
+    match.roundLabel,
+    match.statusLabel,
+    statusIncludesDate ? '' : match.dateLabel,
+    match.setScoreText ? `Sets: ${match.setScoreText}` : '',
+  ].filter(Boolean).join(' | ')
+}
+
 export default function Navbar({
   searchCriteria,
   onApplySearch,
@@ -31,16 +55,8 @@ export default function Navbar({
   const hasActiveSearch = Boolean((searchCriteria?.query || '').trim())
     || (Array.isArray(searchCriteria?.tags) && searchCriteria.tags.length > 0)
   const activeAtpMatch = atpMatches[atpMatchIndex] || null
-  const atpMetaText = activeAtpMatch
-    ? [
-      activeAtpMatch.tournamentName,
-      activeAtpMatch.categoryLabel,
-      activeAtpMatch.roundLabel,
-      activeAtpMatch.statusLabel,
-      activeAtpMatch.dateLabel,
-      activeAtpMatch.setScoreText ? `Sets: ${activeAtpMatch.setScoreText}` : '',
-    ].filter(Boolean).join(' | ')
-    : ''
+  const activeAtpMatchHasScore = hasVisibleMatchScore(activeAtpMatch)
+  const atpMetaText = buildAtpMetaText(activeAtpMatch)
 
   useEffect(() => {
     let isMounted = true
@@ -204,7 +220,7 @@ export default function Navbar({
               )}
 
               {!isAtpLoading && !atpError && !activeAtpMatch && (
-                <span className="atp-ticker-message">No ATP matches with scores yet.</span>
+                <span className="atp-ticker-message">No ATP matches found for yesterday, today, or tomorrow.</span>
               )}
 
               {!isAtpLoading && !atpError && activeAtpMatch && (
@@ -224,12 +240,16 @@ export default function Navbar({
                       <span className={`atp-player ${activeAtpMatch.winnerSide === 'left' ? 'is-winner' : ''}`}>
                         {activeAtpMatch.leftName}
                       </span>
-                      <span className="atp-score">{activeAtpMatch.leftScore}</span>
+                      {activeAtpMatchHasScore && (
+                        <span className="atp-score">{activeAtpMatch.leftScore}</span>
+                      )}
                       <span className="atp-versus">vs</span>
                       <span className={`atp-player ${activeAtpMatch.winnerSide === 'right' ? 'is-winner' : ''}`}>
                         {activeAtpMatch.rightName}
                       </span>
-                      <span className="atp-score">{activeAtpMatch.rightScore}</span>
+                      {activeAtpMatchHasScore && (
+                        <span className="atp-score">{activeAtpMatch.rightScore}</span>
+                      )}
                     </p>
                     <p className="atp-meta-line" title={atpMetaText}>{atpMetaText}</p>
                   </div>
@@ -278,8 +298,7 @@ export default function Navbar({
           role="presentation"
           onClick={closeSearchModal}
         >
-          <div
-            className="search-modal-panel content-panel"
+          <div className="search-modal-panel content-panel"
             role="dialog"
             aria-modal="true"
             aria-labelledby="search-modal-title"
