@@ -827,7 +827,7 @@ export default function PostDetailPage() {
                       <div className="mt-3 flex items-center gap-2">
                         <button
                           type="button"
-                          className={`button is-small is-danger is-outlined ${upvotingCommentId === comment.id ? 'is-loading' : ''}`}
+                          className={`button is-small is-danger ${upvotingCommentId === comment.id ? 'is-loading' : ''}`}
                           onClick={() => handleUpvoteComment(comment)}
                           disabled={upvotingCommentId === comment.id || isSavingThisComment || isDeletingThisComment}
                           title="Upvote this comment"
@@ -835,7 +835,7 @@ export default function PostDetailPage() {
                           ▲
                         </button>
                         <span className="font-bold text-gray-700">
-                          {commentUpvotes} {commentUpvotes === 1 ? 'vote' : 'votes'}
+                          {commentUpvotes} <span className="text-red-500">▲</span>
                         </span>
                       </div>
 
