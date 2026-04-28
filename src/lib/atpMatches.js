@@ -313,10 +313,15 @@ function keepLatestThenCompleted(matches, limit) {
     .sort((a, b) => a.sortEpoch - b.sortEpoch)
     .reverse()
 
-  const scoredMatches = sortedByDate.filter((match) => hasFullMatchScore(match))
-  const orderedMatches = [...scoredMatches].sort((left, right) => {
+  const orderedMatches = [...sortedByDate].sort((left, right) => {
     if (left.isCompleted !== right.isCompleted) {
       return left.isCompleted ? -1 : 1
+    }
+
+    const leftHasScore = hasFullMatchScore(left)
+    const rightHasScore = hasFullMatchScore(right)
+    if (leftHasScore !== rightHasScore) {
+      return leftHasScore ? -1 : 1
     }
 
     return right.sortEpoch - left.sortEpoch
@@ -382,14 +387,23 @@ function mapEspnCompetitionToTickerItem(competition, tournamentName) {
 }
 
 export function parseEspnAtpMatches(payload, { limit = DEFAULT_ATP_MATCH_LIMIT } = {}) {
-  const groupedCompetitions = (payload?.events || []).flatMap((event) => (
-    (event?.groupings || []).flatMap((group) => (
+  const groupedCompetitions = (payload?.events || []).flatMap((event) => {
+    const groupedFromGroupings = (event?.groupings || []).flatMap((group) => (
       (group?.competitions || []).map((competition) => ({
         competition,
         tournamentName: event?.shortName || event?.name || 'ATP Tour',
       }))
     ))
-  ))
+
+    if (groupedFromGroupings.length > 0) {
+      return groupedFromGroupings
+    }
+
+    return (event?.competitions || []).map((competition) => ({
+      competition,
+      tournamentName: event?.shortName || event?.name || 'ATP Tour',
+    }))
+  })
 
   const eligibleCompetitions = groupedCompetitions.filter(({ competition, tournamentName }) => {
     const descriptor = [
