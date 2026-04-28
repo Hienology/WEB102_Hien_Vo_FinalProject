@@ -147,6 +147,7 @@ export default function PostDetailPage() {
   const [upvoting, setUpvoting] = useState(false)
   const [error, setError] = useState(null)
   const [postMediaSize, setPostMediaSize] = useState(null)
+  const [commentSortOption, setCommentSortOption] = useState('recent')
 
   useEffect(() => () => {
     if (commentDraft.previewUrl.startsWith('blob:')) {
@@ -184,6 +185,23 @@ export default function PostDetailPage() {
     }
     fetchData()
   }, [id])
+
+  function getSortedComments() {
+    const commentsCopy = [...comments]
+    if (commentSortOption === 'popular') {
+      return commentsCopy.sort((a, b) => {
+        const upvotesA = Number(a.upvotes ?? 0)
+        const upvotesB = Number(b.upvotes ?? 0)
+        if (upvotesB !== upvotesA) {
+          return upvotesB - upvotesA
+        }
+        // If upvotes are equal, sort by most recent
+        return new Date(b.created_at) - new Date(a.created_at)
+      })
+    }
+    // 'recent' - sort by most recent first
+    return commentsCopy.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+  }
 
   async function handleUpvote() {
     if (upvoting || !post) return
@@ -650,15 +668,36 @@ export default function PostDetailPage() {
 
       {/* Comments section */}
       <div className="box content-panel">
-        <h2 className="title is-5 text-gray-800 mb-4">
-          Comments ({comments.length})
-        </h2>
+        <div className="flex justify-between items-center gap-3 mb-4 comment-toolbar">
+          <h2 className="title is-5 text-gray-800 mb-0">
+            Comments ({comments.length})
+          </h2>
+
+          {comments.length > 0 && (
+            <div className="flex gap-2 home-sort-controls">
+              <button
+                type="button"
+                className={`button is-small ${commentSortOption === 'recent' ? 'is-success' : 'is-light'}`}
+                onClick={() => setCommentSortOption('recent')}
+              >
+                Newest
+              </button>
+              <button
+                type="button"
+                className={`button is-small ${commentSortOption === 'popular' ? 'is-danger' : 'is-light'}`}
+                onClick={() => setCommentSortOption('popular')}
+              >
+                Most Popular
+              </button>
+            </div>
+          )}
+        </div>
 
         {comments.length === 0 ? (
           <p className="text-gray-400 mb-4">No comments yet. Start the conversation!</p>
         ) : (
           <div className="flex flex-col gap-3 mb-6">
-            {comments.map((comment) => {
+            {getSortedComments().map((comment) => {
               const parsedComment = parseCommentRecord(comment)
               const isCommentAuthor = comment.author_id === userId
               const isEditingThisComment = editingCommentId === comment.id && editingCommentDraft
