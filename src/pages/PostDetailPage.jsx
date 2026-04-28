@@ -889,7 +889,7 @@ export default function PostDetailPage() {
                 }}
               />
             </div>
-            <p className="help">Images up to 10MB, GIFs up to 60 seconds and 25MB, videos up to 25MB.</p>
+            <p className="help">Images up to 25MB, GIFs up to 60 seconds and 50MB, videos up to 50MB.</p>
 
             {isPreparingCommentMedia && (
               <div className="inline-loading-row" role="status" aria-live="polite">

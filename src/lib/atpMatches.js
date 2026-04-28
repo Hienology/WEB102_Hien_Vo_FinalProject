@@ -1,7 +1,7 @@
 export const ESPN_ATP_SCOREBOARD_URL = 'https://site.api.espn.com/apis/site/v2/sports/tennis/atp/scoreboard'
 export const SPORTRADAR_ATP_PROXY_URL = '/api/sportsradar/tennis/atp-live'
 export const API_TENNIS_PROXY_URL = '/api/api-tennis/atp-live'
-export const DEFAULT_ATP_MATCH_LIMIT = 48
+export const DEFAULT_ATP_MATCH_LIMIT = 50
 export const DEFAULT_ATP_PROVIDER = 'auto'
 const RECENT_MATCH_DETAIL_WINDOW = 12
 
@@ -818,6 +818,7 @@ function mapApiSportsFixtureToTickerItem(fixture) {
     || fixture?.tournament?.name
     || fixture?.competition?.name
     || 'ATP Tour'
+    || 'ATP Challenger Tour'
   const { tournamentName: normalizedTournamentName, categoryLabel: parsedCategoryLabel } = splitTournamentAndCategoryLabel(rawTournamentName)
   const categoryLabel = normalizeCategoryLabel(fixture?.league?.type || fixture?.competition?.type) || parsedCategoryLabel
   const rawScores = fixture?.scores || fixture?.score || fixture?.result
@@ -921,22 +922,35 @@ async function requestJson(url, { signal } = {}) {
   return response.json()
 }
 
-export async function fetchAtpMatches({ signal } = {}) {
+function filterMatchesByDateRange(matches, { daysBack = 2 } = {}) {
+  const now = Date.now()
+  const cutoffTime = now - (daysBack * 24 * 60 * 60 * 1000)
+
+  return matches.filter((match) => {
+    const matchTime = match?.sortEpoch || 0
+    return matchTime >= cutoffTime
+  })
+}
+
+export async function fetchAtpMatches({ signal, daysBack = 2, includeAllFromRange = true } = {}) {
   const provider = resolveAtpProvider()
 
   if (provider === 'sportsradar') {
     const sportsradarPayload = await requestJson(resolveSportsradarProxyUrl(), { signal })
-    return parseSportsradarAtpMatches(sportsradarPayload)
+    const allMatches = parseSportsradarAtpMatches(sportsradarPayload, { limit: 1000 })
+    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
   }
 
   if (provider === 'apitennis') {
     const apiTennisPayload = await requestJson(resolveApiTennisProxyUrl(), { signal })
-    return parseApiTennisAtpMatches(apiTennisPayload)
+    const allMatches = parseApiTennisAtpMatches(apiTennisPayload, { limit: 1000 })
+    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
   }
 
   if (provider === 'espn') {
     const espnPayload = await requestJson(ESPN_ATP_SCOREBOARD_URL, { signal })
-    return parseEspnAtpMatches(espnPayload)
+    const allMatches = parseEspnAtpMatches(espnPayload, { limit: 1000 })
+    return includeAllFromRange ? filterMatchesByDateRange(allMatches, { daysBack }) : allMatches.slice(0, DEFAULT_ATP_MATCH_LIMIT)
   }
 
   let sportsradarError = null
@@ -948,21 +962,21 @@ export async function fetchAtpMatches({ signal } = {}) {
 
   try {
     const sportsradarPayload = await requestJson(resolveSportsradarProxyUrl(), { signal })
-    sportsradarMatches = parseSportsradarAtpMatches(sportsradarPayload)
+    sportsradarMatches = parseSportsradarAtpMatches(sportsradarPayload, { limit: 1000 })
   } catch (error) {
     sportsradarError = error
   }
 
   try {
     const apiTennisPayload = await requestJson(resolveApiTennisProxyUrl(), { signal })
-    apiTennisMatches = parseApiTennisAtpMatches(apiTennisPayload)
+    apiTennisMatches = parseApiTennisAtpMatches(apiTennisPayload, { limit: 1000 })
   } catch (error) {
     apiTennisError = error
   }
 
   try {
     const espnPayload = await requestJson(ESPN_ATP_SCOREBOARD_URL, { signal })
-    espnMatches = parseEspnAtpMatches(espnPayload)
+    espnMatches = parseEspnAtpMatches(espnPayload, { limit: 1000 })
   } catch (error) {
     espnError = error
   }
@@ -997,7 +1011,8 @@ export async function fetchAtpMatches({ signal } = {}) {
     })
 
   if (rankedResults.length > 0) {
-    return rankedResults[0].matches
+    const bestMatches = rankedResults[0].matches
+    return includeAllFromRange ? filterMatchesByDateRange(bestMatches, { daysBack }) : bestMatches
   }
 
   if (sportsradarError && apiTennisError && espnError) {

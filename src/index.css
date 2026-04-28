@@ -458,7 +458,7 @@ body {
 
 .post-detail-media {
   display: block;
-  max-width: 100%;
+  max-width: none;
   height: auto;
   object-fit: contain;
   margin-left: auto;

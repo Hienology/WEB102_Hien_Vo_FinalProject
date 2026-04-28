@@ -6,9 +6,9 @@ const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.sv
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.ogg', '.mov', '.m4v', '.mkv']
 
 export const SUPABASE_MEDIA_BUCKET = import.meta.env.VITE_SUPABASE_MEDIA_BUCKET || 'grand-slam-media'
-export const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024
-export const MAX_VIDEO_UPLOAD_BYTES = 25 * 1024 * 1024
-export const MAX_COMMENT_GIF_UPLOAD_BYTES = 25 * 1024 * 1024
+export const MAX_IMAGE_UPLOAD_BYTES = 25 * 1024 * 1024
+export const MAX_VIDEO_UPLOAD_BYTES = 50 * 1024 * 1024
+export const MAX_COMMENT_GIF_UPLOAD_BYTES = 50 * 1024 * 1024
 export const MAX_COMMENT_GIF_DURATION_SECONDS = 60
 
 function normalizeMediaUrl(value) {
@@ -353,7 +353,7 @@ export async function validateCommentMediaFile(file) {
     }
   }
 
-  const uploadLimit = isAnimatedGif ? MAX_COMMENT_GIF_UPLOAD_BYTES : getMediaUploadLimitBytes(mediaType)
+  const uploadLimit = MAX_COMMENT_GIF_UPLOAD_BYTES
   if (file.size > uploadLimit) {
     return {
       mediaType,

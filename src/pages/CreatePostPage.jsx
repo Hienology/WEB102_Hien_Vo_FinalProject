@@ -305,7 +305,7 @@ export default function CreatePostPage({ onDraftStateChange }) {
                   }}
                 />
               </div>
-              <p className="help">Images up to 10MB, videos up to 25MB.</p>
+              <p className="help">Images up to 25MB, videos up to 50MB.</p>
 
               {isPreparingMedia && (
                 <div className="inline-loading-row" role="status" aria-live="polite">
