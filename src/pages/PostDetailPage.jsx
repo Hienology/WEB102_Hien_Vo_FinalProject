@@ -824,7 +824,7 @@ export default function PostDetailPage() {
                         />
                       )}
 
-                      <div className="mt-3 flex items-center gap-2">
+                      <div className="mt-3 flex items-center gap-6">
                         <button
                           type="button"
                           className={`button is-small is-danger ${upvotingCommentId === comment.id ? 'is-loading' : ''}`}
